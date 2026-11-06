@@ -280,6 +280,10 @@ static bool linux_power_request_is_inert(const DesiredSettings* d,
 static bool linux_backend_preflight(LinuxGpuState* g, const DesiredSettings* d,
                                     const LinuxHardwareSnapshot* snapshot,
                                     char* err, size_t errSize) {
+    if (!linux_instance_write_authority(g)) {
+        gc_strlcpy(err, errSize, "instance GPU physical identity cannot be verified");
+        return false;
+    }
     if (!g || !d || !g->nvmlReady || !g->writeIdentityResolved) {
         gc_strlcpy(err, errSize, "GPU write target is unavailable or not uniquely resolved");
         return false;
@@ -380,6 +384,7 @@ static LinuxCurveTargetBuildResult build_curve_transition_targets(
 static bool linux_apply_transaction_step(void* opaque, unsigned int phase) {
     LinuxApplyTransactionContext* context = (LinuxApplyTransactionContext*)opaque;
     LinuxGpuState* g = context->gpu;
+    if (!linux_instance_write_authority(g)) return false;
     const DesiredSettings* d = context->desired;
     switch (phase) {
         case LINUX_MUTATION_LOCK_CEILING:
@@ -610,6 +615,7 @@ struct LinuxResetTransactionContext {
 static bool linux_reset_transaction_step(void* opaque, unsigned int phase) {
     LinuxResetTransactionContext* context = (LinuxResetTransactionContext*)opaque;
     LinuxGpuState* g = context->gpu;
+    if (!linux_instance_write_authority(g)) return false;
     switch (phase) {
         case LINUX_MUTATION_LOCK: {
             bool noControl = linux_clock_control_proven_absent(g);
@@ -672,6 +678,10 @@ LinuxMutationResult linux_backend_reset(LinuxGpuState* g, char* result, size_t r
     LinuxHardwareSnapshot snapshot = {};
     char detail[256] = {};
     linux_backend_refresh(g);
+    if (!linux_instance_write_authority(g)) {
+        if (result) gc_strlcpy(result, resultSize, "instance GPU physical identity cannot be verified");
+        return mutation;
+    }
     if (!linux_backend_capture_snapshot(g, &snapshot, detail, sizeof(detail)) ||
         !g->writeIdentityResolved) {
         if (result) gc_strlcpy(result, resultSize, detail[0] ? detail : "Reset preflight failed");
@@ -700,12 +710,12 @@ LinuxMutationResult linux_backend_reset(LinuxGpuState* g, char* result, size_t r
 }
 
 bool linux_backend_set_curve_fan_percent(LinuxGpuState* g, unsigned int percent) {
-    if (!g || percent > 100) return false;
+    if (!g || percent > 100 || !linux_instance_write_authority(g)) return false;
     return nvml_set_fan(g, FAN_MODE_FIXED, false, (int)percent);
 }
 
 bool linux_backend_set_fan_auto(LinuxGpuState* g) {
-    return g && nvml_set_fan(g, FAN_MODE_AUTO, true, 0);
+    return g && linux_instance_write_authority(g) && nvml_set_fan(g, FAN_MODE_AUTO, true, 0);
 }
 
 FanFixedMaintenanceDecision linux_backend_fixed_fan_check(LinuxGpuState* g,

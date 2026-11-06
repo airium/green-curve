@@ -17,27 +17,28 @@
 // Per-command client deadlines and the reachability rule that keeps a busy
 // daemon from being presented as an absent one.
 #include "linux_daemon_deadline_policy.h"
+#include "linux_instance.h"
 
-#define GC_DAEMON_SOCKET_DIR  "/run/greencurve"
+#define GC_DAEMON_SOCKET_DIR  (linux_instance().paths.socketDir)
 #define GC_DAEMON_SOCKET_NAME "greencurve.sock"
-#define GC_DAEMON_SOCKET_PATH GC_DAEMON_SOCKET_DIR "/" GC_DAEMON_SOCKET_NAME
-#define GC_DAEMON_STATE_DIR   "/var/lib/greencurve"
-#define GC_DAEMON_STATE_FILE  "/var/lib/greencurve/active.bin"
-#define GC_DAEMON_OPERATION_FILE "/var/lib/greencurve/operation.bin"
+#define GC_DAEMON_SOCKET_PATH (linux_instance().paths.socketPath)
+#define GC_DAEMON_STATE_DIR   (linux_instance().paths.stateDir)
+#define GC_DAEMON_STATE_FILE  (linux_instance().paths.active)
+#define GC_DAEMON_OPERATION_FILE (linux_instance().paths.operation)
 // Boot-apply policy.  Root-owned and checksummed like the other two records:
 // it decides whether an unattended hardware write happens at daemon start.
-#define GC_DAEMON_STARTUP_FILE "/var/lib/greencurve/startup.bin"
+#define GC_DAEMON_STARTUP_FILE (linux_instance().paths.startup)
 // Automatic-restore guard: how many unattended start-time writes this boot has
 // already spent, and whether automatic restoration is latched off entirely.
 // Same protection as the records above for the same reason -- it is the only
 // thing standing between a setting that hangs the driver and an endless
 // crash / systemd-restart / replay loop.
-#define GC_DAEMON_GUARD_FILE "/var/lib/greencurve/restore-guard.bin"
+#define GC_DAEMON_GUARD_FILE (linux_instance().paths.guard)
 // Present while this daemon may have left the fan under manual control that
 // only its own runtime maintains.  Found at start in the same boot, it means
 // the previous daemon died without handing the fan back
 // (ownership_handback_policy.h).
-#define GC_DAEMON_FAN_MARKER_FILE "/var/lib/greencurve/fan-owned.bin"
+#define GC_DAEMON_FAN_MARKER_FILE (linux_instance().paths.fan)
 
 // Pending-connection backlog.  Requests are serviced one at a time under the
 // runtime lock, so this only has to absorb bursts while one request is in

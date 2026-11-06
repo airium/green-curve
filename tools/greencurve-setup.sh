@@ -34,6 +34,8 @@ STATE_DIR="/var/lib/greencurve"
 SOCKET_PATH="/run/greencurve/greencurve.sock"
 
 PURGE=0
+INSTANCE=""
+INSTANCE_ARGS=()
 
 say()  { printf '%s\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -124,10 +126,10 @@ cmd_install() {
     # print immediately before this script ran usermod.  Claim ownership of that
     # message whenever we actually have an account to enroll.
     if [ -n "$user" ]; then
-        GREENCURVE_SETUP_OWNS_GROUP=1 "$BINARY" --service-install ||
+        GREENCURVE_SETUP_OWNS_GROUP=1 "$BINARY" "${INSTANCE_ARGS[@]}" --service-install ||
             die "daemon installation failed; nothing else was changed."
     else
-        "$BINARY" --service-install ||
+        "$BINARY" "${INSTANCE_ARGS[@]}" --service-install ||
             die "daemon installation failed; nothing else was changed."
     fi
 
@@ -149,7 +151,11 @@ cmd_install() {
     ln -sf "$INSTALL_DIR/greencurve" "$BIN_PATH"
     info "linked $BIN_PATH -> $INSTALL_DIR/greencurve"
 
-    install_desktop_entries "$user"
+    if [ -z "$INSTANCE" ]; then
+        install_desktop_entries "$user"
+    else
+        info "GPU-bound terminal: greencurve --instance $INSTANCE --tui"
+    fi
 
     say ""
     say "Done. Next steps:"
@@ -235,9 +241,26 @@ remove_user_desktop_entry() {
 cmd_uninstall() {
     require_root uninstall
     require_binary
+    if [ -z "$INSTANCE" ] && compgen -G '/etc/systemd/system/greencurve@*.service' >/dev/null; then
+        die "remove each GPU-bound instance with --instance GPU-UUID before uninstalling shared files"
+    fi
 
     say "Removing the Green Curve daemon..."
-    "$BINARY" --service-remove || warn "--service-remove reported a failure; continuing with cleanup"
+    if ! "$BINARY" "${INSTANCE_ARGS[@]}" --service-remove; then
+        if [ -n "$INSTANCE" ]; then
+            die "instance removal failed; saved settings were kept, no purge performed"
+        fi
+        warn "--service-remove reported a failure; continuing with cleanup"
+    fi
+
+    if [ -n "$INSTANCE" ]; then
+        if [ "$PURGE" -eq 1 ] && [ -d "$STATE_DIR" ]; then
+            rm -rf -- "$STATE_DIR"
+            info "purged this instance's saved settings"
+        fi
+        info "kept shared executable, command link, group, and other GPU instances"
+        return
+    fi
 
     # The binary removes the unit; these are the leftovers it deliberately keeps
     # so that an upgrade does not lose anything.
@@ -319,7 +342,7 @@ cmd_status() {
     [ -d "$STATE_DIR" ] && info "state: $STATE_DIR"
     if [ -x "$BINARY" ]; then
         say ""
-        "$BINARY" --show-startup 2>&1 | sed 's/^/  /' || true
+        "$BINARY" "${INSTANCE_ARGS[@]}" --show-startup 2>&1 | sed 's/^/  /' || true
     fi
 }
 
@@ -327,7 +350,7 @@ usage() {
     cat <<EOF
 Green Curve Linux setup
 
-Usage: $(basename "$0") <command> [--purge]
+Usage: $(basename "$0") <command> [--purge] [--instance GPU-UUID]
 
 Commands:
   install     Install, start and verify the daemon; add your user to the
@@ -336,6 +359,9 @@ Commands:
               Settings and the group are kept unless --purge is given.
   status      Report unit, socket, group and startup-policy state.
 
+With --instance, manage only that GPU-bound service. Uninstall keeps shared
+executables and the group; --purge removes only that instance's saved settings.
+
 Environment:
   GREENCURVE_BINARY   path to the greencurve executable (default: next to this script)
   GREENCURVE_USER     account to enroll instead of \$SUDO_USER
@@ -343,13 +369,29 @@ EOF
 }
 
 COMMAND=""
-for arg in "$@"; do
+while [ "$#" -gt 0 ]; do
+    arg="$1"
     case "$arg" in
         install|uninstall|status) COMMAND="$arg" ;;
         --purge)                  PURGE=1 ;;
+        --instance)
+            [ "$#" -ge 2 ] || die "--instance requires a GPU UUID"
+            [ -z "$INSTANCE" ] || die "--instance may be specified once"
+            [[ "$2" =~ ^GPU-[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]] ||
+                die "invalid instance GPU UUID"
+            instance_tail="${2:4}"
+            INSTANCE="GPU-${instance_tail,,}"
+            INSTANCE_ARGS=(--instance "$INSTANCE")
+            UNIT_NAME="greencurve@$INSTANCE.service"
+            UNIT_PATH="/etc/systemd/system/$UNIT_NAME"
+            STATE_DIR="/var/lib/greencurve/$INSTANCE"
+            SOCKET_PATH="/run/greencurve/$INSTANCE/greencurve.sock"
+            shift
+            ;;
         -h|--help|help)           usage; exit 0 ;;
         *)                        die "unknown argument '$arg' (try --help)" ;;
     esac
+    shift
 done
 
 case "$COMMAND" in

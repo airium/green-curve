@@ -5,13 +5,16 @@
 #include "linux_service_install_policy.h"
 #include "linux_service_sandbox.h"
 #include "linux_socket_path_permissions.h"
+#include "linux_instance_units.h"
+#include "linux_instance_remove.h"
+#include <glob.h>
 
 // ===========================================================================
 // systemd install / remove  (requires root)
 // ===========================================================================
-#define GC_UNIT_PATH "/etc/systemd/system/greencurve.service"
-#define GC_RESUME_UNIT_NAME "greencurve-resume.service"
-#define GC_RESUME_UNIT_PATH "/etc/systemd/system/" GC_RESUME_UNIT_NAME
+#define GC_UNIT_PATH (linux_instance().paths.unitPath)
+#define GC_RESUME_UNIT_NAME (linux_instance().paths.resumeName)
+#define GC_RESUME_UNIT_PATH (linux_instance().paths.resumePath)
 #define GC_INSTALL_DIR "/usr/local/libexec/greencurve"
 #define GC_INSTALL_BIN GC_INSTALL_DIR "/greencurve"
 #define GC_SYMLINK_BIN "/usr/local/bin/greencurve"
@@ -191,7 +194,7 @@ static bool run_service_activation_step(
         }
         case LINUX_SERVICE_STEP_ENABLE: {
             char* args[] = {(char*)"systemctl", (char*)"enable",
-                            (char*)"greencurve.service", nullptr};
+                            linux_instance().paths.unitName, nullptr};
             commandResult = run_systemctl(args);
             break;
         }
@@ -205,13 +208,13 @@ static bool run_service_activation_step(
             // Deliberately unconditional: `enable --now` leaves an already
             // running old executable/protocol resident after an upgrade.
             char* args[] = {(char*)"systemctl", (char*)"restart",
-                            (char*)"greencurve.service", nullptr};
+                            linux_instance().paths.unitName, nullptr};
             commandResult = run_systemctl(args);
             break;
         }
         case LINUX_SERVICE_STEP_IS_ACTIVE: {
             char* args[] = {(char*)"systemctl", (char*)"is-active",
-                            (char*)"--quiet", (char*)"greencurve.service", nullptr};
+                            (char*)"--quiet", linux_instance().paths.unitName, nullptr};
             commandResult = run_systemctl(args);
             break;
         }
@@ -338,26 +341,7 @@ static bool write_resume_unit(char* err, size_t errSize) {
         gc_strlcpy(err, errSize, "cannot open resume unit stream");
         return false;
     }
-    int written = fprintf(stream,
-        "[Unit]\n"
-        "Description=Green Curve settings restore after suspend\n"
-        "Documentation=https://github.com/aufkrawall/greencurve\n"
-        "After=suspend.target hibernate.target hybrid-sleep.target"
-        " suspend-then-hibernate.target\n"
-        "After=nvidia-resume.service\n"
-        "After=greencurve.service\n"
-        "ConditionPathExists=%s\n\n"
-        "[Service]\n"
-        "Type=oneshot\n"
-        "ExecStart=%s --resume-restore\n"
-        "StandardOutput=journal\n"
-        "StandardError=journal\n"
-        GC_LINUX_SERVICE_SANDBOX
-        "\n"
-        "[Install]\n"
-        "WantedBy=suspend.target hibernate.target hybrid-sleep.target"
-        " suspend-then-hibernate.target\n",
-        GC_DAEMON_SOCKET_PATH, GC_INSTALL_BIN);
+    int written = linux_instance_render_resume_unit(stream, GC_INSTALL_BIN);
     bool ok = written > 0 && fflush(stream) == 0 && fsync(fd) == 0;
     if (fclose(stream) != 0) ok = false;
     if (!ok) {
@@ -414,51 +398,7 @@ int linux_service_install(char* err, size_t errSize,
     }
     FILE* f = fdopen(unitFd, "w");
     if (!f) { close(unitFd); gc_strlcpy(err, errSize, "cannot open systemd unit stream"); return 1; }
-    int unitWritten = fprintf(f,
-        "[Unit]\n"
-        "Description=Green Curve NVIDIA GPU control daemon\n"
-        // Deliberately NOT `After=multi-user.target`.  That ordering was
-        // self-defeating: the unit is WantedBy that same target, so ordering
-        // after it scheduled Green Curve dead last in boot, behind every other
-        // service that might touch the GPU.  Ordering against the driver's own
-        // units is the real dependency, and it is ordering only -- no Wants=,
-        // so a machine without nvidia-persistenced is unaffected rather than
-        // having a service started for it.
-        "After=nvidia-persistenced.service\n"
-        // Windows' SCM resets its failure count after ten minutes and re-arms
-        // the restart actions. systemd's start limit is a rolling window with a
-        // 5-in-10s default, which a service that crashes on a two-second
-        // RestartSec= trips almost immediately -- and once tripped the unit
-        // stays failed until someone runs `systemctl reset-failed`. A ten
-        // minute window gives the same shape as the SCM: spaced-out driver
-        // events each get a fresh restart, a tight crash loop still stops.
-        "StartLimitIntervalSec=600\n"
-        "StartLimitBurst=5\n\n"
-        "[Service]\n"
-        "Type=notify\n"
-        "NotifyAccess=main\n"
-        "ExecStart=%s --daemon\n"
-        // `always`, not `on-failure`. The daemon exits 0 for any stop signal,
-        // so an out-of-band `kill -TERM` left the machine with no GPU control
-        // and systemd declining to act -- while the same thing on Windows
-        // (TerminateProcess) is exactly what the SCM restart actions cover.
-        // `systemctl stop` still wins: systemd never restarts a unit it stopped.
-        "Restart=always\n"
-        "RestartSec=2\n"
-        // Liveness, not a poll: the daemon pings from its accept loop, so a
-        // wedged serve loop is restarted instead of sitting there `active`
-        // while nothing re-asserts the fan. Generous on purpose -- a VF apply
-        // with per-point readback verification is the longest thing that runs
-        // between two pings.
-        "WatchdogSec=120\n"
-        "StateDirectory=greencurve\n"
-        "RuntimeDirectory=greencurve\n"
-        "RuntimeDirectoryMode=0755\n"
-        GC_LINUX_SERVICE_SANDBOX
-        "\n"
-        "[Install]\n"
-        "WantedBy=multi-user.target\n",
-        GC_INSTALL_BIN);
+    int unitWritten = linux_instance_render_daemon_unit(f, GC_INSTALL_BIN);
     bool unitOk = unitWritten > 0 && fflush(f) == 0 && fsync(unitFd) == 0;
     if (fclose(f) != 0) unitOk = false;
     if (!unitOk) { gc_strlcpy(err, errSize, "failed to commit systemd unit"); return 1; }
@@ -550,6 +490,19 @@ int linux_service_remove(char* err, size_t errSize) {
         gc_strlcpy(err, errSize, "--service-remove requires root (use sudo)");
         return 1;
     }
+    if (linux_instance_enabled())
+        return linux_instance_remove_units(linux_instance().paths, run_systemctl,
+                                           unlink, err, errSize);
+    if (!linux_instance_enabled()) {
+        glob_t instances = {};
+        int found = glob("/etc/systemd/system/greencurve@*.service", GLOB_NOSORT, nullptr, &instances);
+        bool present = found == 0 && instances.gl_pathc > 0;
+        globfree(&instances);
+        if (present) {
+            gc_strlcpy(err, errSize, "remove GPU-bound instances before removing the shared default service");
+            return 1;
+        }
+    }
     // The resume unit goes first: leaving it enabled after the daemon unit is
     // gone would leave a unit wanted by every sleep target pointing at a binary
     // that is about to be removed.
@@ -559,11 +512,11 @@ int linux_service_remove(char* err, size_t errSize) {
         dlog("service-remove: resume unit disable failed (non-fatal)\n");
     unlink(GC_RESUME_UNIT_PATH);
     char* disableArgs[] = {(char*)"systemctl", (char*)"disable", (char*)"--now",
-                           (char*)"greencurve.service", nullptr};
+                           linux_instance().paths.unitName, nullptr};
     if (run_systemctl(disableArgs) != 0)
         dlog("service-remove: disable failed (non-fatal)\n");
     unlink(GC_UNIT_PATH);
-    unlink(GC_SYMLINK_BIN);
+    if (!linux_instance_enabled()) unlink(GC_SYMLINK_BIN);
     char* reloadArgs[] = {(char*)"systemctl", (char*)"daemon-reload", nullptr};
     if (run_systemctl(reloadArgs) != 0)
         dlog("service-remove: daemon-reload failed (non-fatal)\n");
@@ -572,7 +525,7 @@ int linux_service_remove(char* err, size_t errSize) {
     // stops being useful. Non-fatal: a unit that was never failed makes this a
     // no-op, and neither outcome should fail the uninstall.
     char* resetArgs[] = {(char*)"systemctl", (char*)"reset-failed",
-                         (char*)"greencurve.service",
+                         linux_instance().paths.unitName,
                          (char*)GC_RESUME_UNIT_NAME, nullptr};
     if (run_systemctl(resetArgs) != 0)
         dlog("service-remove: reset-failed failed (non-fatal)\n");

@@ -7,6 +7,7 @@
 
 #include "linux_backend.h"
 #include "linux_gpu_selection.h"
+#include "linux_instance_ownership.h"
 #include "linux_architecture_policy.h"
 #include "linux_vf_validation.h"
 #include "vf_backends.h"
@@ -90,6 +91,11 @@ static Fn sym(PlLib lib, const char* name) {
 // ===========================================================================
 
 static const unsigned int LB_CONTROL_BUF_SIZE = 0x4000;
+static bool linux_instance_write_authority(const LinuxGpuState* g) {
+    if (!linux_instance_enabled()) return true;
+    return g && linux_instance_observed_identity(&linux_instance().uuid,
+        g->getUuid, g->nvmlDevice, g->writeIdentityResolved);
+}
 #include "linux_backend_vf_read.h"
 
 // ports nvapi_read_curve(); publishes only a complete atomic VF snapshot.

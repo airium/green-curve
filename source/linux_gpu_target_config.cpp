@@ -175,6 +175,12 @@ void linux_configured_gpu_load(const char* configPath,
     if (!gpu) return;
     *gpu = LinuxConfiguredGpu{};
     gpu->role = GPU_LOCATION_ROLE_UNRECORDED;
+    // The instance namespace is the persistent physical selection. A stale
+    // BDF in this card's config must not defeat its UUID binding after boot.
+    if (linux_instance_enabled() && !explicitTarget) {
+        gpu->status = LINUX_CONFIGURED_GPU_NONE;
+        return;
+    }
     LinuxGpuSelectionRecord record = LINUX_GPU_SELECTION_RECORD_ABSENT;
     if (explicitTarget) gpu->target = *explicitTarget;
     else record = load_linux_gpu_selection(configPath, &gpu->target, &gpu->role);

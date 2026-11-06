@@ -133,7 +133,7 @@ void populate_view_model(const TuiState& state, TuiViewModel* vm,
         vm->intentReadback = compare_intent_to_readback(&state.service);
     char bdf[32] = {};
     format_linux_gpu_bdf(&state.targetGpu, bdf, sizeof(bdf));
-    snprintf(selectedGpu, 192, "%s  %s", bdf,
+    snprintf(selectedGpu, 192, "%s%s  %s", linux_instance_enabled() ? "[bound] " : "", bdf,
              state.targetGpu.name[0] ? state.targetGpu.name : "NVIDIA GPU");
     vm->selectedGpu = selectedGpu;
 }

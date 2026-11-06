@@ -9,6 +9,7 @@
 #endif
 
 #include "linux_daemon.h"
+#include "linux_instance_ownership.h"
 #include "log_redaction_policy.h"
 #include "linux_backend.h"
 #include "linux_crash_breadcrumb.h"
@@ -94,26 +95,7 @@ static void dlog(const char* fmt, ...) {
 // ===========================================================================
 // Daemon side
 // ===========================================================================
-static LinuxGpuState g_gpu;
-static bool g_gpuReady = false;
-static pl_mutex g_lock;
-static DesiredSettings g_activeDesired;
-static bool g_hasActiveDesired = false;
-static GpuAdapterInfo g_activeTarget;
-static LinuxGpuUuid g_activeTargetUuid;
-static GpuLocationRole g_activeTargetRole = GPU_LOCATION_ROLE_REQUIRED;
-static bool g_stateUncertain = false;
-static ServiceOperationTracker g_operationTracker = {};
-// The committed startup-apply policy.  Zero-initialized means RESTORE_LAST,
-// which is exactly what every build before protocol v13 did.
-static LinuxDaemonStartupRecord g_startupPolicy = {};
-// Whether an unattended write is still allowed.  See
-// linux_auto_restore_policy.h; the persisted copy lives in GC_DAEMON_GUARD_FILE.
-static LinuxAutoRestoreGuard g_autoRestoreGuard = {};
-// The protocol-v29 cause of an AUTOMATIC_APPLY_FAILED latched by THIS daemon
-// process (linux_auto_restore_runtime.h).  In memory only, like Windows: after
-// a restart the persisted lockout is published without a cause.
-static ServiceAutoApplyFailure g_autoApplyFailure = {};
+#include "linux_daemon_runtime_state.h"
 
 static bool persist_daemon_operation(gc_u64 operationId, gc_u32 state,
     gc_u32 responseStatus, gc_u32 outcomeSeverity, const char* message) {
@@ -268,6 +250,8 @@ static void handle_request(const ServiceRequest* wireReq, ServiceResponse* resp)
              (unsigned long long)req->expectedServiceInstanceId,
              (unsigned long long)req->expectedGpuGeneration,
              (unsigned long long)req->expectedTopologySignature, reason);
+    } else if (!instance_request_target_matches(req, resp)) {
+        // The instance gate supplied its refusal.
     } else if ((req->command == SERVICE_CMD_APPLY ||
                 req->command == SERVICE_CMD_RESET) &&
                !mutation_preconditions_match(req, resp)) {
@@ -600,6 +584,7 @@ static void log_peer(int connFd) {
 #include "linux_daemon_serve.h"
 
 int linux_daemon_run(const char* configPath) {
+    if (!linux_instance_start_daemon()) return 1;
     pl_mutex_init(&g_lock);
     if (!init_fan_wake_condition()) {
         dlog("daemon: cannot initialize monotonic fan wake condition\n");
@@ -643,6 +628,7 @@ int linux_daemon_run(const char* configPath) {
              service_gpu_health_reason_name(g_gpu.health.reason));
     } else {
         dlog("daemon: GPU backend init failed: %s (serving telemetry-less)\n", err);
+        if (strstr(err, "GPU ownership unavailable")) return 1;
     }
 
     LinuxDaemonOperationRecord operation = {};

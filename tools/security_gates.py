@@ -126,11 +126,15 @@ def finish_environment_blocked():
 
 
 LINUX_FIXTURES = (
+    ("linux_instance_cli_regression", "instance CLI and assets"),
     ("linux_transport_regression", "socket transport"),
     ("linux_crash_report_regression", "crash report"),
     ("linux_gpu_selection_store_regression", "GPU selection store"),
 )
 LINUX_FIXTURE_EXTRA_SOURCES = {
+    "linux_instance_cli_regression": (
+        "linux_cli_options.cpp", "linux_assets.cpp", "linux_port.cpp",
+        "linux_port_profiles.cpp", "config_text_utils.cpp", "fan_curve.cpp"),
     "linux_transport_regression": ("fan_curve.cpp", "config_text_utils.cpp"),
     "linux_crash_report_regression": (),
     # The [gpu] record I/O, the INI reader/writer it uses, and the shared

@@ -121,6 +121,9 @@ template<class... A> static bool fan_manual_write_confirmed(A...){return true;}
 static void gc_strlcpy(char* dst,size_t n,const char* s){if(dst&&n)std::snprintf(dst,n,"%s",s);}
 static void linux_backend_refresh(LinuxGpuState*){}
 static bool apply_curve_offsets_verified(LinuxGpuState*,const int*,const bool*,int){++curveOffsetWrites;return true;}
+// These clock-transition fixtures model an unbound singleton. Physical UUID
+// instance admission is covered by the instance fixtures.
+static bool linux_instance_write_authority(const LinuxGpuState*) { return true; }
 #include "linux_backend_rollback.h"
 struct ProbeContext {LinuxGpuState* gpu; DesiredSettings* d; LinuxHardwareSnapshot* s;};
 static bool probeStep(void* raw,unsigned int phase){

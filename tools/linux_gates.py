@@ -722,7 +722,7 @@ def check_release_packaging(ctx, require_text, forbid_text):
         for directive in directives:
             require_text(os.path.join(arch_dir, unit), directive,
                          f"{unit} matches the shared runtime sandbox: {directive}")
-    require_text(_p(ctx, "linux_service_install.cpp"), "GC_LINUX_SERVICE_SANDBOX",
+    require_text(_p(ctx, "linux_instance_units.h"), "GC_LINUX_SERVICE_SANDBOX",
                  "generated units use the shared sandbox")
     require_text(os.path.join(arch_dir, "greencurve-resume.service"), "ExecStart=/usr/bin/greencurve --resume-restore",
                  "Arch resume unit runs binary resume-restore")
@@ -1040,37 +1040,39 @@ def check_auto_restore(ctx, require_text, forbid_text, require_order):
     require_text(_p(ctx, "service_protocol_validation.h"),
                  "resume restore carries settings",
                  "a resume request carries no settings either")
-    require_text(install_cpp, "greencurve-resume.service",
+    require_text(install_cpp, "linux_instance().paths.resumeName",
                  "the installer writes the resume unit")
     # WantedBy + After on the same sleep targets is what makes a unit run on the
     # way back UP rather than before suspending.
-    require_text(install_cpp,
+    require_text(_p(ctx, "linux_instance_units.h"),
                  "\"After=suspend.target hibernate.target hybrid-sleep.target\"",
                  "the resume unit is ordered after the sleep targets")
-    require_text(install_cpp,
+    require_text(_p(ctx, "linux_instance_units.h"),
                  "\"WantedBy=suspend.target hibernate.target hybrid-sleep.target\"",
                  "the resume unit is wanted by the sleep targets")
-    require_text(install_cpp, "After=nvidia-resume.service",
+    require_text(_p(ctx, "linux_instance_units.h"), "After=nvidia-resume.service",
                  "the resume restore waits for the driver's own resume unit, not for a delay")
     require_text(install_policy_h, "LINUX_SERVICE_STEP_ENABLE_RESUME",
                  "enabling the resume unit is a named install step")
     require_text(install_cpp, "unlink(GC_RESUME_UNIT_PATH);",
                  "--service-remove removes the resume unit")
+    require_text(install_cpp, "linux_instance_remove_units(linux_instance().paths, run_systemctl,",
+                 "named removal uses the executing stop-before-unlink policy")
     require_text(cli_cpp, "--resume-restore",
                  "the resume edge is reachable from the CLI")
     require_text(main_cpp, "linux_daemon_resume_restore(",
                  "the CLI verb sends the resume command")
 
     # --- the unit's own persistence ----------------------------------------
-    require_text(install_cpp, "\"Restart=always\\n\"",
+    require_text(_p(ctx, "linux_instance_units.h"), "\"Restart=always\\n\"",
                  "an out-of-band kill -TERM does not leave the machine without GPU control")
-    forbid_text(install_cpp, "Restart=on-failure",
+    forbid_text(_p(ctx, "linux_instance_units.h"), "Restart=on-failure",
                 "the unit no longer declines to restart after a clean-signal exit")
-    require_text(install_cpp, "\"StartLimitIntervalSec=600\\n\"",
+    require_text(_p(ctx, "linux_instance_units.h"), "\"StartLimitIntervalSec=600\\n\"",
                  "the start limit uses the SCM's ten-minute window, not systemd's 10s default")
-    forbid_text(install_cpp, "\"After=multi-user.target\\n\\n\"",
+    forbid_text(_p(ctx, "linux_instance_units.h"), "\"After=multi-user.target\\n\\n\"",
                 "the daemon is no longer ordered dead last in boot")
-    require_text(install_cpp, "\"WatchdogSec=120\\n\"",
+    require_text(_p(ctx, "linux_instance_units.h"), "\"WatchdogSec=120\\n\"",
                  "a wedged daemon is restarted instead of sitting there active")
     require_text(notify_cpp, "WATCHDOG=1",
                  "the daemon answers the watchdog it asked for")

@@ -23,6 +23,8 @@ void print_linux_help() {
     puts("  greencurve --write-assets [--assets-dir path]");
     puts("  greencurve --config path --profile N");
     puts("  greencurve --gpu DDDD:BB:DD.F       Select and persist an exact PCI GPU");
+    puts("  greencurve --instance GPU-UUID     Select an isolated GPU-bound daemon/client");
+    puts("                                      Use one terminal per GPU; selectors remain bound");
     puts("Startup (what the daemon applies at boot):");
     puts("  greencurve --show-startup                 Show the current startup policy");
     puts("  greencurve --startup-profile N            Apply profile N at daemon start");
@@ -92,6 +94,18 @@ bool parse_linux_cli_options(int argc, char** argv, LinuxCliOptions* opts) {
         } else if (strcmp(arg, "--tui") == 0) {
             opts->recognized = true;
             opts->tui = true;
+        } else if (strcmp(arg, "--instance") == 0) {
+            if (opts->hasInstance || !argument_requires_value(argc, i)) {
+                set_message(opts->error, sizeof(opts->error), "--instance requires one GPU UUID");
+                return false;
+            }
+            opts->instanceUuid = linux_gpu_uuid_parse(argv[++i]);
+            if (!linux_gpu_uuid_valid(&opts->instanceUuid)) {
+                set_message(opts->error, sizeof(opts->error), "Invalid instance GPU UUID");
+                return false;
+            }
+            opts->recognized = true;
+            opts->hasInstance = true;
         } else if (strcmp(arg, "--daemon") == 0) {
             opts->recognized = true;
             opts->daemon = true;
@@ -187,7 +201,7 @@ bool parse_linux_cli_options(int argc, char** argv, LinuxCliOptions* opts) {
                 return false;
             }
             i++;
-            if (!parse_linux_gpu_bdf(argv[i], &opts->gpuTarget)) {
+            if (!linux_gpu_parse_bdf(argv[i], &opts->gpuTarget)) {
                 set_message(opts->error, sizeof(opts->error),
                             "Invalid --gpu value; expected DDDD:BB:DD.F PCI BDF");
                 return false;
@@ -476,6 +490,10 @@ bool parse_linux_cli_options(int argc, char** argv, LinuxCliOptions* opts) {
         }
     }
 
+    if (opts->hasInstance && opts->hasGpuTarget) {
+        set_message(opts->error, sizeof(opts->error), "Use --instance UUID or --gpu BDF, not both");
+        return false;
+    }
     if (opts->clkDomainDump && !gc_clk_dump::args_read_only(argc, argv, true)) {
         set_message(opts->error, sizeof(opts->error),
             "Use --clk-domain-dump alone, optionally with --config and --gpu.");

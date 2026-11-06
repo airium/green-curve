@@ -5,6 +5,22 @@ Newest-first rolling memory. Archive older entries to `archive-YYYY-Www.md` when
 This log is PUBLIC (tracked since 2026-10-22): every entry follows the same
 rules as the topic pages (`secret-leak-prevention.md`, "Public wiki safety").
 
+## 2026-11-06: GPU-bound Linux daemon instances
+
+- Added strict UUID-bound process instances with isolated transport, persistence,
+  logs, user profiles and main/resume service routing. Shared physical-card locks
+  protect ownership across the updated singleton and named instances.
+- A bound TUI stays on its physical GPU. The setup lifecycle preserves shared
+  files when removing an instance and refuses default removal while named units
+  remain. Named removal stops both main and resume writers before unlinking
+  units; failed removal prevents wrapper purge. Singleton data is not automatically migrated.
+- Executing fixtures cover identity/renumbering, duplicate-owner exclusion, CLI
+  and launcher forwarding, generated service bodies and intercepted lifecycle
+  operations. Full hardware-free regressions and source gates passed, including
+  production-backend fake-driver and unit-rendering fixtures. Plain build produced
+  eight fresh release packages with matching sidecars and Linux payloads. No physical tuning or
+  system service installation was performed. See [instance design](../linux-instances.md).
+
 ## 2026-11-06: GPU-bound instance foundations
 
 - Added validated UUID-derived paths and shared physical-GPU ownership locks,

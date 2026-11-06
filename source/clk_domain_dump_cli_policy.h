@@ -21,7 +21,8 @@ static inline bool args_read_only(int argc, Char* const* argv, bool allowGpu) {
     for (int i = 1; i < argc; ++i) {
         if (arg_equals(argv[i], "--clk-domain-dump")) found = true;
         else if (arg_equals(argv[i], "--config") ||
-                 (allowGpu && arg_equals(argv[i], "--gpu"))) {
+                 (allowGpu && (arg_equals(argv[i], "--gpu") ||
+                               arg_equals(argv[i], "--instance")))) {
             if (++i >= argc || !argv[i] || !argv[i][0]) return false;
         } else if (!arg_equals(argv[i], "--help") && !arg_equals(argv[i], "-h")) return false;
     }

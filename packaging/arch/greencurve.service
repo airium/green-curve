@@ -16,6 +16,7 @@ UMask=0077
 NoNewPrivileges=true
 StateDirectory=greencurve
 RuntimeDirectory=greencurve
+RuntimeDirectoryPreserve=yes
 RuntimeDirectoryMode=0755
 ProtectSystem=full
 ProtectHome=yes

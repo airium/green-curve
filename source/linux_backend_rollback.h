@@ -14,6 +14,10 @@
 bool linux_backend_restore_snapshot(LinuxGpuState* g, const LinuxHardwareSnapshot* snapshot,
                                     unsigned int phaseMask, char* err, size_t errSize) {
     if (err && errSize) err[0] = 0;
+    if (!linux_instance_write_authority(g)) {
+        gc_strlcpy(err, errSize, "rollback instance GPU physical identity cannot be verified");
+        return false;
+    }
     if (!g || !snapshot || !snapshot->valid) {
         gc_strlcpy(err, errSize, "rollback snapshot is invalid");
         return false;

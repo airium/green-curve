@@ -33,6 +33,7 @@ Dialog messages can be copied to the clipboard, and typing into active curve loc
 
 ### New
 
+- **Linux multi-GPU instances:** keep independent tuning and startup policies active on multiple cards using GPU-bound daemon and terminal instances.
 - **Dialog text copying:** pressing Ctrl+C on any confirmation, warning, or error dialog copies the complete message box contents to the clipboard.
 
 ### Fixed

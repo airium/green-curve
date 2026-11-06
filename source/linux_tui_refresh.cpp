@@ -198,6 +198,11 @@ bool tui_configured_gpu_allows_write(TuiState* state, const char* action) {
 // and lifts its write block once the daemon shows it; `--gpu` persists one.
 bool tui_select_gpu_step(TuiState* state, int delta) {
     if (!state) return false;
+    if (linux_instance_enabled()) {
+        snprintf(state->status, sizeof(state->status),
+                 "GPU-bound instance: open another --instance GPU-UUID terminal for another card");
+        return false;
+    }
     if (state->dirty) {
         snprintf(state->status, sizeof(state->status),
                  "Reset or save staged changes before switching GPUs");

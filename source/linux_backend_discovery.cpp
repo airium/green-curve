@@ -516,7 +516,26 @@ bool linux_backend_init(LinuxGpuState* g, const GpuAdapterInfo* target,
         return false;
     }
 
-    // UUID evidence is optional; its fallback is the existing location resolver.
+    GpuAdapterInfo instanceTarget = {};
+    if (linux_instance_enabled()) {
+        int instanceIndex = linux_instance_gpu_index(&linux_instance().uuid,
+            g->adapterUuids, g->adapterCount);
+        if (instanceIndex < 0) {
+            gc_strlcpy(err, errSize, "instance GPU UUID is absent, unreadable, or ambiguous");
+            return false;
+        }
+        instanceTarget = g->adapters[instanceIndex];
+        if (!linux_instance_restore_allowed(&linux_instance().uuid,
+                target, &instanceTarget, uuid)) {
+            gc_strlcpy(err, errSize, "request targets a different GPU than this bound instance");
+            return false;
+        }
+        target = &instanceTarget;
+        uuid = &linux_instance().uuid;
+        role = GPU_LOCATION_ROLE_REQUIRED;
+    }
+
+    // UUID evidence is optional outside explicitly GPU-bound instances.
     const bool targeted = target && target->valid;
     const LinuxGpuInitSelection selection =
         linux_gpu_restore_selection(target, role, g->adapters, g->adapterCount,
@@ -558,6 +577,11 @@ bool linux_backend_init(LinuxGpuState* g, const GpuAdapterInfo* target,
     g->nvmlDevice = devices[g->nvmlIndex];
     g->nvmlReady = g->nvmlDevice != nullptr;
     g->writeIdentityResolved = selection.writeResolved;
+    if (g->writeIdentityResolved && !linux_instance_acquire_owner(
+            &g->adapterUuids[selectedIndex], err, errSize, &g->selectedGpu)) {
+        g->writeIdentityResolved = false;
+        return false;
+    }
     gc_strlcpy(g->gpuName, sizeof(g->gpuName), g->selectedGpu.name);
     nvml_query_ranges(g);
     g->health.reason = SERVICE_GPU_HEALTH_ARCHITECTURE_UNAVAILABLE;
@@ -580,6 +604,16 @@ bool linux_backend_select_target(LinuxGpuState* g,
         gc_strlcpy(err, errSize, "a stable GPU target is required");
         return false;
     }
+    if (linux_instance_enabled()) {
+        int bound = linux_instance_gpu_index(&linux_instance().uuid,
+            g->adapterUuids, g->adapterCount);
+        if (bound < 0 || !linux_instance_restore_allowed(&linux_instance().uuid,
+                target, &g->adapters[bound], uuid)) {
+            gc_strlcpy(err, errSize, "request targets a different GPU than this bound instance");
+            return false;
+        }
+        uuid = &linux_instance().uuid;
+    }
     // A stored target whose location moved still names the adapter already
     // selected; re-initializing the backend for it on every request would
     // only repeat the same resolution.
@@ -588,7 +622,9 @@ bool linux_backend_select_target(LinuxGpuState* g,
     if (g->writeIdentityResolved && current >= 0 &&
         (unsigned int)current == g->selectedAdapterIndex) {
         const LinuxGpuUuid observed = linux_gpu_read_uuid(g->getUuid, g->nvmlDevice);
-        if (linux_gpu_uuid_compatible(uuid, &observed)) {
+        if (linux_gpu_uuid_compatible(uuid, &observed) &&
+            (!linux_instance_enabled() ||
+             (linux_gpu_uuid_valid(&observed) && strcmp(observed.text, linux_instance().uuid.text) == 0))) {
             // A fresh query proves a match. If the optional query fails, keep
             // the old fast path rather than requiring a new NVML init to work.
             g->adapterUuids[current] = observed;

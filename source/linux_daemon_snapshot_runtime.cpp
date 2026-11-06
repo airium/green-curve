@@ -295,7 +295,20 @@ static bool daemon_retry_backend_for_read(bool explicitRefresh) {
     return true;
 }
 
+static bool instance_request_target_matches(const ServiceRequest* req, ServiceResponse* resp) {
+    if (!linux_instance_enabled() || !req->targetGpu.valid) return true;
+    if (g_gpu.writeIdentityResolved &&
+        linux_instance_target_allowed(&req->targetGpu, &g_gpu.selectedGpu)) return true;
+    resp->status = SERVICE_STATUS_ERROR;
+    gc_strlcpy(resp->message, sizeof(resp->message),
+        "request targets a different or unavailable GPU than this bound instance");
+    dlog("daemon: refused cross-instance target command=%u\n", req->command);
+    return false;
+}
+
 static bool select_request_gpu(const ServiceRequest* req, char* err, size_t errSize) {
+    if (linux_instance_enabled() && g_gpu.writeIdentityResolved &&
+        (!req || !req->targetGpu.valid)) return true;
     if (g_gpu.adapterCount == 1 && (!req || !req->targetGpu.valid)) {
         if (!g_gpu.writeIdentityResolved) {
             gc_strlcpy(err, errSize, "single GPU identity is not safe for writes");

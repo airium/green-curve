@@ -30,6 +30,7 @@
 #include "linux_cli_fan_override_policy.h"
 // LinuxGpuSelectionRecord and LinuxConfiguredGpu: config.ini's GPU selection.
 #include "linux_gpu_selection.h"
+#include "linux_gpu_uuid.h"
 
 // What `--startup-profile` / `--show-startup` asked the client to do with the
 // daemon's boot-apply policy.  The policy modes themselves are the shared
@@ -74,6 +75,8 @@ struct LinuxCliOptions {
     bool hasAssetsDir;
     bool hasProfileSlot;
     bool hasGpuTarget;
+    bool hasInstance;
+    LinuxGpuUuid instanceUuid;
     int profileSlot;
     GpuAdapterInfo gpuTarget;
     char configPath[LINUX_PATH_MAX];

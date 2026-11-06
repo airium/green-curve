@@ -184,6 +184,7 @@ ACTIVE_WINDOWS_TOOLCHAIN = "llvm-mingw"
 LINUX_SOURCE_FILES = [
     os.path.join(SOURCE_DIR, "linux_main.cpp"),
     os.path.join(SOURCE_DIR, "linux_cli_options.cpp"),
+    os.path.join(SOURCE_DIR, "linux_assets.cpp"),
     os.path.join(SOURCE_DIR, "linux_debug_log.cpp"),
     # Startup half of the crash report: path resolution/rotation/descriptor.
     os.path.join(SOURCE_DIR, "linux_crash_report.cpp"),
@@ -3600,8 +3601,9 @@ def run_source_regression_checks():
     require_text(linux_service_install_cpp, "GC_INSTALL_BIN", "Linux systemd unit uses a protected staged daemon binary")
     require_text(linux_service_install_cpp, "root_owned_nonwritable_path", "Linux service install validates root-owned non-writable parents")
     require_text(linux_service_install_cpp, "stage_service_binary", "Linux service install stages the daemon binary before writing the unit")
-    require_text(linux_service_install_cpp, "ExecStart=%s --daemon", "Linux systemd unit launches the staged daemon path")
-    require_text(linux_service_install_cpp, "Type=notify", "Linux systemd unit waits for explicit daemon readiness")
+    require_text(os.path.join(SOURCE_DIR, "linux_instance_units.h"), "ExecStart=%s --daemon", "Linux systemd unit launches the staged daemon path")
+    require_text(os.path.join(SOURCE_DIR, "linux_instance_units.h"), "Type=notify", "Linux systemd unit waits for explicit daemon readiness")
+    require_text(linux_service_install_cpp, "linux_instance_render_daemon_unit(f, GC_INSTALL_BIN)", "installer uses the executing unit renderer")
     require_text(linux_service_install_cpp, "linux_service_run_activation", "Linux service activation uses the injected deterministic sequence")
     require_text(linux_service_install_cpp, "serviceBuildNumber", "Linux install verifies the restarted daemon build")
     forbid_text(linux_service_install_cpp, "enable\", (char*)\"--now", "Linux service upgrade never leaves an already-running old process resident")
@@ -3648,7 +3650,7 @@ def run_source_regression_checks():
     require_text(linux_main_cpp,
                  "The daemon socket pathname was verified root:greencurve mode=0660",
                  "Linux service install reports verified socket pathname authorization")
-    require_text(linux_main_cpp, "sudo usermod -aG greencurve", "Linux help and generated assets document group enrollment")
+    require_text(os.path.join(SOURCE_DIR, "linux_assets.cpp"), "sudo usermod -aG greencurve", "Linux generated assets document group enrollment")
     require_text(linux_port_profiles_cpp, 'addControl("lock_mode", value);',
                  "Linux profiles persist flatten versus hard-pin lock mode")
     require_text(linux_port_profiles_cpp, '"lock_tracks_anchor"',
@@ -4072,7 +4074,7 @@ def run_source_regression_checks():
                  "service installation verifies pathname authorization before protocol ping")
     require_text(os.path.join(SOURCE_DIR, "linux_service_sandbox.h"), "UMask=0077",
                  "systemd service repeats restrictive umask hardening")
-    require_text(linux_service_install_cpp, "RuntimeDirectoryMode=0755",
+    require_text(os.path.join(SOURCE_DIR, "linux_instance_units.h"), "RuntimeDirectoryMode=0755",
                  "systemd creates the protected socket directory deterministically")
     require_text(linux_tui_cpp, "pid_t child = fork()",
                  "Linux TUI runs under a terminal-restoring supervisor")

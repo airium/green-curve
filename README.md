@@ -189,6 +189,41 @@ sudo pacman -U dist/linux-x64/greencurve-0.31.0-1-x86_64.pkg.tar.zst
 
 Alternatively, PKGBUILD templates are available under [`packaging/arch/`](packaging/arch/) to build from source (`makepkg -si`) or install from prebuilt binaries (`makepkg -si -p PKGBUILD.bin`).
 
+### GPU-bound Linux instances
+
+Use one daemon per physical GPU to keep independent VF curves, power limits,
+fans, and startup policies active together. First list the physical identities:
+
+```bash
+nvidia-smi --query-gpu=uuid,pci.bus_id,name --format=csv
+```
+
+Substitute a complete UUID from that output for `GPU-...`, then repeat for each card:
+
+```bash
+sudo greencurve --instance GPU-... --service-install
+greencurve --instance GPU-... --tui
+greencurve --instance GPU-... --show-startup
+sudo greencurve --instance GPU-... --service-remove
+```
+
+The setup wrapper accepts the same selector, for example
+`sudo ./greencurve-setup.sh install --instance GPU-...`. Instance uninstall keeps
+the shared executable and other GPUs; adding `--purge` removes only that instance's
+saved settings. Remove named instances before uninstalling the shared default service.
+
+Each instance has its own socket, state, log, operation journal, restoration guard,
+and user configuration. UUID binding follows PCI bus renumbering and refuses a
+missing or replaced card. `--instance` and `--gpu` cannot be combined. Open one TUI
+per card: the GPU selector is fixed in instance mode. If using an explicit `--config`,
+use a different file for every card. Generated desktop assets include the selector
+and document distinct launcher names.
+
+Without `--instance`, the existing singleton service, paths, and profiles are
+unchanged. Stop that service before moving its GPU to an instance; profiles and
+active state are not automatically copied into the new namespaces. Ownership locks
+prevent updated singleton and instance daemons from controlling the same card.
+
 ### Launching and navigation
 
 Run `greencurve` (or `greencurve --tui`) from a terminal. If launched from a graphical file manager without a terminal, Green Curve automatically launches inside your desktop session's terminal emulator.

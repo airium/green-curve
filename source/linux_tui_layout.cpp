@@ -3,6 +3,7 @@
 
 #include "linux_tui_layout_internal.h"
 #include "linux_tui_authority.h"
+#include "linux_instance.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -84,8 +85,13 @@ void draw_header(TuiCanvas* c) {
     c->text(2, 2, 4, "GPU", TUI_STYLE_MUTED);
     int gpuWidth = out->width >= 140 ? 62 : out->width >= 100 ? 48 : out->width - 30;
     if (gpuWidth < 28) gpuWidth = 28;
-    c->button(TuiRect{7, 2, gpuWidth, 1}, vm.selectedGpu && vm.selectedGpu[0]
-        ? vm.selectedGpu : "unselected GPU", ACTION_GPU_SELECT_DELTA, 0, 1);
+    if (linux_instance_enabled()) {
+        c->text(7, 2, gpuWidth, vm.selectedGpu && vm.selectedGpu[0]
+            ? vm.selectedGpu : "GPU-bound instance", TUI_STYLE_MUTED);
+    } else {
+        c->button(TuiRect{7, 2, gpuWidth, 1}, vm.selectedGpu && vm.selectedGpu[0]
+            ? vm.selectedGpu : "unselected GPU", ACTION_GPU_SELECT_DELTA, 0, 1);
+    }
     char live[160] = {};
     if (vm.serviceOnline && vm.service) {
         snprintf(live, sizeof(live), "%d VF pts  •  %s  •  generation %llu",

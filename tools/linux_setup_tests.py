@@ -54,3 +54,57 @@ def run_self_tests(root):
             elif captured.exists() or "unavailable" not in result.stdout:
                 raise RuntimeError("Linux cleanup did not report an unavailable user switch")
     print("Linux desktop cleanup shell fixtures passed")
+    run_instance_setup_tests(source, bash)
+
+
+def run_instance_setup_tests(source, bash):
+    """Execute the shipped uninstall function with side effects intercepted."""
+    match = re.search(r"^cmd_uninstall\(\) \{\n.*?^\}\n", source, re.M | re.S)
+    if not match:
+        raise RuntimeError("Linux instance uninstall function is missing")
+    with tempfile.TemporaryDirectory(prefix="gc-instance-setup-") as temporary:
+        directory = Path(temporary)
+        state = directory / "state"
+        state.mkdir()
+        capture = directory / "calls"
+        environment = dict(os.environ, CAPTURE=str(capture), INSTANCE_STATE=str(state))
+        environment.pop("BASH_ENV", None)
+        harness = r'''
+require_root() { :; }
+require_binary() { :; }
+say() { :; }
+info() { :; }
+warn() { :; }
+die() { exit 23; }
+fixture_binary() { printf 'binary:%s\n' "$*" >> "$CAPTURE"; return "${BINARY_RESULT:-0}"; }
+rm() { printf 'rm:%s\n' "$*" >> "$CAPTURE"; }
+systemctl() { printf 'systemctl:%s\n' "$*" >> "$CAPTURE"; }
+groupdel() { printf 'groupdel:%s\n' "$*" >> "$CAPTURE"; }
+compgen() { return 0; }
+target_user() { printf fixture-user; }
+BINARY=fixture_binary
+INSTANCE=GPU-01234567-89ab-cdef-0123-456789abcdef
+INSTANCE_ARGS=(--instance "$INSTANCE")
+STATE_DIR=$INSTANCE_STATE
+PURGE=1
+'''
+        command = harness + match.group() + '\ncmd_uninstall\n'
+        result = subprocess.run([bash, "--noprofile", "--norc", "-c", command],
+                                env=environment, capture_output=True, text=True, timeout=10)
+        expected = ["binary:--instance GPU-01234567-89ab-cdef-0123-456789abcdef --service-remove",
+                    f"rm:-rf -- {state}"]
+        if result.returncode or capture.read_text().splitlines() != expected:
+            raise RuntimeError("instance uninstall touched shared service files or failed to forward its identity")
+        capture.unlink()
+        failed_environment = dict(environment, BINARY_RESULT="7")
+        result = subprocess.run([bash, "--noprofile", "--norc", "-c", command],
+                                env=failed_environment, capture_output=True, text=True, timeout=10)
+        if result.returncode != 23 or capture.read_text().splitlines() != expected[:1]:
+            raise RuntimeError("instance uninstall purged state or succeeded after binary removal failed")
+        capture.unlink()
+        command = harness + '\nINSTANCE=""\nINSTANCE_ARGS=()\n' + match.group() + '\ncmd_uninstall\n'
+        result = subprocess.run([bash, "--noprofile", "--norc", "-c", command],
+                                env=environment, capture_output=True, text=True, timeout=10)
+        if result.returncode != 23 or capture.exists():
+            raise RuntimeError("singleton uninstall did not refuse before touching named instances")
+    print("Linux instance setup lifecycle shell fixtures passed")

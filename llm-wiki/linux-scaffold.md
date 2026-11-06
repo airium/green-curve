@@ -198,9 +198,11 @@ same rollback-capable curve phase; durable intent can therefore never forget a
 sparse point while its old offset remains active and untracked.
 On a multi-GPU system the backend may use adapter 0 for read-only telemetry,
 but it does not publish `ADAPTER_IDENTITY` or `READY` until an exact write
-target has been selected. The daemon currently owns one selected backend and
+target has been selected. Each daemon owns one selected backend and
 one active desired intent. A request cannot switch that backend to another GPU
-while intent is active; the user must Reset the owning GPU first. The fan
+while intent is active; the user must Reset the owning GPU first. Independent
+GPU-bound processes are available through `--instance`; see
+[Linux instances](linux-instances.md). The fan
 worker independently checks that the active-intent identity still matches the
 selected backend before any reassertion write.
 The installer deliberately creates the group but does **not** add the invoking

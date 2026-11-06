@@ -1031,6 +1031,7 @@ int run_linux_clk_domain_dump_tests();
 // (tests/linux_tui_gpu_target_tests.cpp, 7400-7409 and 7430-7439).
 int run_linux_tui_gpu_target_tests();
 int run_linux_instance_tests();
+int run_linux_instance_backend_tests();
 // F-PERSIST-SCHEMA fixtures, in their own frame.  The frozen record layouts
 // are over a kilobyte each and several are live at once; under ASan's
 // redzones that is enough to overflow main()'s frame, which already carries
@@ -2677,6 +2678,7 @@ static int run_all_tests(int argc, char** argv) {
         return visibilityFailure;
     }
     if (int instanceFailure = run_linux_instance_tests()) return instanceFailure;
+    if (int instanceFailure = run_linux_instance_backend_tests()) return instanceFailure;
     if (int tuiTargetFailure = run_linux_tui_gpu_target_tests()) {
         fprintf(stderr, "regression assertion failed: code %d\n", tuiTargetFailure);
         return tuiTargetFailure;
