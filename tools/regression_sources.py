@@ -3,6 +3,7 @@
 """Sources shared by the native and cross-linked regression harnesses."""
 
 REGRESSION_SOURCES = (
+    'linux_instance_tests.cpp',
     'clock_transition_tests.cpp',
     'advanced_apply_tests.cpp',
     'service_install_tests.cpp',

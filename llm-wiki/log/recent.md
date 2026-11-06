@@ -5,6 +5,13 @@ Newest-first rolling memory. Archive older entries to `archive-YYYY-Www.md` when
 This log is PUBLIC (tracked since 2026-10-22): every entry follows the same
 rules as the topic pages (`secret-leak-prevention.md`, "Public wiki safety").
 
+## 2026-11-06: GPU-bound instance foundations
+
+- Added validated UUID-derived paths and shared physical-GPU ownership locks,
+  including PCI aliases when UUID reporting is unavailable.
+- Added hardware-free identity, path, duplicate-owner and restrictive-umask
+  regression coverage. CLI and service integration follows separately.
+
 ## 2026-11-05: Themed message box clipboard copy and VF flatten field edit fix
 
 - Themed message boxes (`ui_message_box.cpp`, `message_box_policy.h`) now support
