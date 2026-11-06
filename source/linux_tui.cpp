@@ -132,7 +132,7 @@ void initialize_state(TuiState* state, const char* configPath,
                  "Select a GPU before editing or applying settings");
     } else if (!state->status[0]) {
         // Only when nothing was said yet: a blocked selection (malformed,
-        // missing, held, refused) says why on its adoption transition, at
+        // missing, refused) says why on its adoption transition, at
         // start or on the reconnect after a start without the daemon.
         snprintf(state->status, sizeof(state->status),
                  "Live GPU state loaded • click a field or use Tab/Enter");

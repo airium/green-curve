@@ -281,7 +281,9 @@ static bool auto_restore_prepare_backend(const GpuAdapterInfo* target,
         // re-initializing in place would drop the previous attempt's dlopen
         // handles on the floor.
         LinuxGpuState replacement = {};
-        if (!linux_backend_init(&replacement, nullptr, err, errSize)) {
+        if (!linux_backend_init(&replacement,
+                g_runtime->binding.valid ? &g_runtime->binding : nullptr,
+                err, errSize, GPU_LOCATION_ROLE_REQUIRED, &g_runtime->bindingUuid)) {
             linux_backend_shutdown(&replacement);
             return false;
         }

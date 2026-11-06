@@ -123,7 +123,7 @@ def check_runtime_failsafe(ctx, require_text, forbid_text, require_order):
                  "Linux daemon installs a SIGINT stop handler")
     require_text(linux_daemon_serve_h, "daemon_release_fan_to_driver",
                  "Linux daemon hands the fan back to the driver on shutdown")
-    require_order(linux_daemon_cpp, "pl_thread_join(fanThread)",
+    require_order(_p(ctx, "linux_multi_gpu_registry.h"), "pl_thread_join(g_runtime->fanThread)",
                   "daemon_release_fan_to_driver()",
                   "fan worker is joined before the shutdown handback, so they cannot race")
     require_text(_p(ctx, "gpu_backend_apply.cpp"),

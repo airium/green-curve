@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 static gc_u64 g_daemonServiceInstanceId = 0;
-static gc_u64 g_daemonStateRevision = 0;
-static gc_u64 g_daemonGpuGeneration = 1;
 
 static gc_u64 daemon_service_instance_id() {
     if (g_daemonServiceInstanceId) return g_daemonServiceInstanceId;

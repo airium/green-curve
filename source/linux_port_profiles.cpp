@@ -1,14 +1,26 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 aufkrawall
 // SPDX-License-Identifier: MIT
 
+#include "linux_gpu_profile_scope.h"
+
 #include "linux_port_internal.h"
 #include "linux_debug_log.h"
 #include "linux_profile_mem_migration.h"
 #include "profile_persistence_policy.h"
 #include "linux_profile_curve_codec.h"
 
+#include <cerrno>
+#include <cstdio>
 #include <string>
 #include <vector>
+
+// Legacy banks are upgrade templates; saves/clears write only the GPU bank.
+static const char* profile_bank_read_path(const char* shared, const char* scoped) {
+    if (!shared || !scoped || strcmp(shared, scoped) == 0) return scoped;
+    FILE* present = fopen(scoped, "rb");
+    if (present) { fclose(present); return scoped; }
+    return errno == ENOENT ? shared : scoped;
+}
 
 void merge_desired_settings(DesiredSettings* base, const DesiredSettings* incoming) {
     if (!base || !incoming) return;
@@ -501,13 +513,15 @@ static void migrate_profile_bank_mem_units(const char* /*path*/, IniDocument* do
 }
 
 bool load_profile_from_config_path(const char* path, int slot, DesiredSettings* desired, char* err, size_t errSize) {
+    const std::string sharedPath = path ? path : "", scopedPath = linux_gpu_profile_path(path);
+    if (path) path = scopedPath.c_str();
     if (!desired || slot < 1 || slot > CONFIG_NUM_SLOTS) {
         set_message(err, errSize, "Invalid profile load arguments");
         return false;
     }
 
     IniDocument doc;
-    if (!load_ini_document(path, &doc, err, errSize)) return false;
+    if (!load_ini_document(profile_bank_read_path(sharedPath.c_str(), path), &doc, err, errSize)) return false;
     migrate_profile_bank_mem_units(path, &doc, "load");
 
     char controlsSection[32] = {};
@@ -549,10 +563,12 @@ static bool load_legacy_config_path(const char* path, DesiredSettings* desired, 
 }
 
 bool load_default_or_selected_profile(const char* path, int* slot, DesiredSettings* desired, char* err, size_t errSize) {
+    const std::string sharedPath = path ? path : "", scopedPath = linux_gpu_profile_path(path);
+    if (path) path = scopedPath.c_str();
     if (!desired) return false;
 
     IniDocument doc;
-    if (!load_ini_document(path, &doc, err, errSize)) return false;
+    if (!load_ini_document(profile_bank_read_path(sharedPath.c_str(), path), &doc, err, errSize)) return false;
     migrate_profile_bank_mem_units(path, &doc, "default-load");
 
     int selectedSlot = slot && *slot >= 1 && *slot <= CONFIG_NUM_SLOTS ? *slot : get_selected_profile_slot(&doc);
@@ -653,13 +669,15 @@ static void write_profile_sections(IniDocument* doc, const char* controlsSection
 }
 
 bool save_profile_to_config_path(const char* path, int slot, const DesiredSettings* desired, char* err, size_t errSize) {
+    const std::string sharedPath = path ? path : "", scopedPath = linux_gpu_profile_path(path);
+    if (path) path = scopedPath.c_str();
     if (!path || !desired || slot < 1 || slot > CONFIG_NUM_SLOTS) {
         set_message(err, errSize, "Invalid profile save arguments");
         return false;
     }
 
     IniDocument doc;
-    if (!load_ini_document(path, &doc, err, errSize)) return false;
+    if (!load_ini_document(profile_bank_read_path(sharedPath.c_str(), path), &doc, err, errSize)) return false;
 
     // Convert pre-fix effective-unit values in every stored slot BEFORE the
     // save stamps the migration marker: the marker declares the whole file
@@ -731,12 +749,14 @@ int load_linux_debug_enabled(const char* configPath, int defaultValue) {
 
 bool clear_profile_from_config_path(const char* path, int slot,
                                     char* err, size_t errSize) {
+    const std::string sharedPath = path ? path : "", scopedPath = linux_gpu_profile_path(path);
+    if (path) path = scopedPath.c_str();
     if (!path || slot < 1 || slot > CONFIG_NUM_SLOTS) {
         set_message(err, errSize, "Invalid profile clear arguments");
         return false;
     }
     IniDocument doc;
-    if (!load_ini_document(path, &doc, err, errSize)) return false;
+    if (!load_ini_document(profile_bank_read_path(sharedPath.c_str(), path), &doc, err, errSize)) return false;
     char controls[32] = {}, curve[32] = {}, fan[32] = {};
     snprintf(controls, sizeof(controls), "profile%d", slot);
     snprintf(curve, sizeof(curve), "profile%d_curve", slot);

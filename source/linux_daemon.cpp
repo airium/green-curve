@@ -80,6 +80,7 @@ static void dlog(const char* fmt, ...) {
     linux_debug_logf("%s", text);
 }
 
+#ifndef GC_DAEMON_RUNTIME_FIXTURE
 #include "linux_daemon_transport.cpp"
 
 // ===========================================================================
@@ -91,29 +92,19 @@ static void dlog(const char* fmt, ...) {
 
 #include "linux_daemon_client_verbs.cpp"
 
+#else
+static unsigned long long monotonic_ms() {
+    struct timespec now = {};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (unsigned long long)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+}
+#endif
+
 // ===========================================================================
 // Daemon side
 // ===========================================================================
-static LinuxGpuState g_gpu;
-static bool g_gpuReady = false;
-static pl_mutex g_lock;
-static DesiredSettings g_activeDesired;
-static bool g_hasActiveDesired = false;
-static GpuAdapterInfo g_activeTarget;
-static LinuxGpuUuid g_activeTargetUuid;
-static GpuLocationRole g_activeTargetRole = GPU_LOCATION_ROLE_REQUIRED;
-static bool g_stateUncertain = false;
-static ServiceOperationTracker g_operationTracker = {};
-// The committed startup-apply policy.  Zero-initialized means RESTORE_LAST,
-// which is exactly what every build before protocol v13 did.
-static LinuxDaemonStartupRecord g_startupPolicy = {};
-// Whether an unattended write is still allowed.  See
-// linux_auto_restore_policy.h; the persisted copy lives in GC_DAEMON_GUARD_FILE.
-static LinuxAutoRestoreGuard g_autoRestoreGuard = {};
-// The protocol-v29 cause of an AUTOMATIC_APPLY_FAILED latched by THIS daemon
-// process (linux_auto_restore_runtime.h).  In memory only, like Windows: after
-// a restart the persisted lockout is published without a cause.
-static ServiceAutoApplyFailure g_autoApplyFailure = {};
+#include "linux_multi_gpu_context.h"
+#define linux_backend_select_target daemon_backend_select_target
 
 static bool persist_daemon_operation(gc_u64 operationId, gc_u32 state,
     gc_u32 responseStatus, gc_u32 outcomeSeverity, const char* message) {
@@ -224,6 +215,8 @@ static bool capture_uncertain_record(bool uncertain, LinuxDaemonStateRecord* rec
 // handlers, the startup write, and the once-per-start record load.  Needs
 // store_daemon_record() and populate_snapshot() above it.
 #include "linux_startup_policy.h"
+#include "linux_multi_gpu_boot.h"
+#include "linux_multi_gpu_registry.h"
 
 
 static void handle_request(const ServiceRequest* wireReq, ServiceResponse* resp) {
@@ -241,8 +234,16 @@ static void handle_request(const ServiceRequest* wireReq, ServiceResponse* resp)
     bool requestValid = protocolMatches &&
         validate_service_request_for_ipc(&validatedRequest);
 
+    char routingError[256] = {};
+    LinuxDaemonGpuRuntime* routed = requestValid
+        ? daemon_runtime_for_request(req, routingError, sizeof(routingError))
+        : &g_discoveryRuntime;
+    LinuxGpuRuntimeScope selected(routed ? routed : &g_discoveryRuntime);
     pl_mutex_lock(&g_lock);
-    if (!protocolMatches) {
+    if (requestValid && !routed) {
+        resp->status = SERVICE_STATUS_ERROR;
+        gc_strlcpy(resp->message, sizeof(resp->message), routingError);
+    } else if (!protocolMatches) {
         resp->status = SERVICE_STATUS_VERSION_MISMATCH;
         gc_strlcpy(resp->message, sizeof(resp->message), "protocol version mismatch");
         // Names the caller, so a stale binary left behind by a partial upgrade
@@ -300,7 +301,7 @@ static void handle_request(const ServiceRequest* wireReq, ServiceResponse* resp)
             resp->status = SERVICE_STATUS_OK;
             break;
         case SERVICE_CMD_RESUME_RESTORE:
-            daemon_handle_resume_restore(resp);
+            daemon_handle_resume_all(resp);
             break;
         case SERVICE_CMD_GET_STARTUP_POLICY:
         case SERVICE_CMD_SET_STARTUP_POLICY:
@@ -586,6 +587,7 @@ static void handle_request(const ServiceRequest* wireReq, ServiceResponse* resp)
     pl_mutex_unlock(&g_lock);
 }
 
+#ifndef GC_DAEMON_RUNTIME_FIXTURE
 static void log_peer(int connFd) {
     struct ucred cred;
     socklen_t len = sizeof(cred);
@@ -600,6 +602,7 @@ static void log_peer(int connFd) {
 #include "linux_daemon_serve.h"
 
 int linux_daemon_run(const char* configPath) {
+    daemon_initialize_discovery_runtime();
     pl_mutex_init(&g_lock);
     if (!init_fan_wake_condition()) {
         dlog("daemon: cannot initialize monotonic fan wake condition\n");
@@ -628,6 +631,10 @@ int linux_daemon_run(const char* configPath) {
          daemonConfigToken,
          daemonLogToken);
 
+    if (!daemon_acquire_runtime_owner()) {
+        dlog("daemon: another instance owns GPU state, or its directory is not protected\n");
+        return 1;
+    }
     char err[256] = {};
     if (linux_backend_init(&g_gpu, nullptr, err, sizeof(err))) {
         g_gpuReady = true;
@@ -645,124 +652,26 @@ int linux_daemon_run(const char* configPath) {
         dlog("daemon: GPU backend init failed: %s (serving telemetry-less)\n", err);
     }
 
-    LinuxDaemonOperationRecord operation = {};
-    if (linux_daemon_operation_load(GC_DAEMON_OPERATION_FILE, &operation,
-            err, sizeof(err))) {
-        gc_u32 restoredState = operation.state == SERVICE_OPERATION_IN_PROGRESS
-            ? SERVICE_OPERATION_OUTCOME_UNKNOWN : operation.state;
-        service_operation_restore(&g_operationTracker, operation.operationId,
-            restoredState, operation.responseStatus, operation.outcomeSeverity,
-            restoredState == SERVICE_OPERATION_OUTCOME_UNKNOWN
-                ? "operation outcome became uncertain across daemon restart"
-                : operation.message);
-    }
-
-    load_auto_restore_guard_at_boot();
-    // After the guard load (a give-up latches it), before any startup write
-    // and before the fan worker exists: a previous daemon in this boot that
-    // died with the fan under manual control gets it handed back to the
-    // driver, at most twice (linux_fan_ownership.h).
-    daemon_fan_ownership_handback_at_start();
-    load_startup_policy_at_boot();
-
-    if (g_startupPolicy.mode == SERVICE_STARTUP_POLICY_PROFILE) {
-        apply_startup_profile_policy();
-    }
-
-    // Startup restart-reapply is authorized only by a complete, checksummed
-    // ACTIVE record for the exact physical GPU. Prepared/uncertain/legacy state
-    // never causes an automatic hardware write.
-    LinuxDaemonStateRecord saved = {};
-    bool stateMigratedFromLegacy = false;
-    LinuxDaemonStateLoadResult loadResult = linux_daemon_state_load(
-        GC_DAEMON_STATE_FILE, &saved, err, sizeof(err), &stateMigratedFromLegacy);
-    if (loadResult == LINUX_DAEMON_STATE_LOADED && err[0]) {
-        // Informational migration note from the loader (an older on-disk
-        // generation was widened into the current record); the committed record
-        // itself is rewritten by the next state transition.
-        dlog("daemon: %s\n", err);
-    }
-    if (loadResult == LINUX_DAEMON_STATE_LEGACY_REMOVED ||
-        loadResult == LINUX_DAEMON_STATE_INVALID_REMOVED) {
-        // The loader's reason is the only thing that separates an upgrade that
-        // lost its layout from a torn or tampered file, and this failure is
-        // silent by nature -- the daemon simply applies nothing.  Never drop it.
-        dlog("daemon: rejected and removed %s daemon state (%s); explicit Apply/Reset required\n",
-             loadResult == LINUX_DAEMON_STATE_LEGACY_REMOVED ? "legacy" : "invalid",
-             err[0] ? err : "no detail");
-    } else if (loadResult == LINUX_DAEMON_STATE_IO_ERROR) {
-        g_stateUncertain = true;
-        dlog("daemon: state load failed closed: %s\n", err);
-    } else if (loadResult == LINUX_DAEMON_STATE_LOADED) {
-        if (saved.operationId != 0) {
-            gc_u32 restoredState = saved.operationState;
-            if (saved.state != LINUX_DAEMON_RECORD_ACTIVE ||
-                restoredState == SERVICE_OPERATION_IN_PROGRESS) {
-                restoredState = SERVICE_OPERATION_OUTCOME_UNKNOWN;
-            }
-            // The committed state record carries no severity of its own; the
-            // resolver derives it from the status this restore reconstructs,
-            // which is exactly as much as this record actually knows.
-            gc_u32 restoredStatus = restoredState == SERVICE_OPERATION_SUCCEEDED
-                ? (gc_u32)SERVICE_STATUS_OK : (gc_u32)SERVICE_STATUS_ERROR;
-            service_operation_restore(&g_operationTracker,
-                saved.operationId, restoredState, restoredStatus,
-                service_response_resolve_outcome_severity(restoredStatus,
-                    SERVICE_OUTCOME_SEVERITY_SUCCESS),
-                restoredState == SERVICE_OPERATION_SUCCEEDED
-                    ? "operation restored from committed daemon state"
-                    : "operation outcome became uncertain across daemon restart");
-        }
-        if (g_startupPolicy.mode != SERVICE_STARTUP_POLICY_RESTORE_LAST) {
-            // The administrator asked for something other than "replay what was
-            // applied last", so the committed record stays on disk untouched
-            // and is simply not written to the GPU.  A later explicit Apply or
-            // a policy change back to restore-last picks it up again.
-            dlog("daemon: committed intent present but startup policy is %s; "
-                 "not replaying it\n",
-                 service_startup_policy_mode_name(g_startupPolicy.mode));
-        } else if (saved.state != LINUX_DAEMON_RECORD_ACTIVE) {
-            g_stateUncertain = true;
-            dlog("daemon: startup state=%u is not ACTIVE; no automatic write\n", saved.state);
-        } else {
-            // One unattended-write path for all three automatic origins: it
-            // owns the crash-loop guard, the GPU re-selection, and -- the part
-            // this code used to get wrong -- building the request through
-            // service_build_full_restore_request(), so the replay resets the OC
-            // baseline before laying the stored curve back down instead of
-            // stacking it on whatever the driver currently holds.
-            LinuxAutoRestoreOutcome outcome = daemon_automatic_restore_write(
-                LINUX_AUTO_RESTORE_TRIGGER_BOOT_RESTORE_LAST,
-                &saved.targetGpu, &saved.desired,
-                (GpuLocationRole)saved.targetLocationRole, &saved.targetUuid);
-            if (!outcome.success)
-                dlog("daemon: startup reapply did not commit -> %s\n",
-                     outcome.message[0] ? outcome.message : "unknown reason");
-        }
-    }
-
-    pl_thread fanThread;
-    if (!pl_thread_start(&fanThread, fan_reassert_thread, nullptr)) {
-        // Fatal, not "degraded".  Without this worker a curve or fixed duty is
-        // written once and never re-asserted, and the driver silently takes the
-        // fan back at the next opportunity -- a running daemon that reports
-        // healthy while quietly not controlling the fan is worse than one that
-        // is visibly absent.  Windows treats lifecycle-worker creation failure
-        // the same way: it stops startup.  Exiting non-zero also lets the unit's
-        // Restart= net make another attempt.
-        dlog("daemon: fan reassertion worker could not be started; refusing to "
-             "serve without it\n");
-        g_running = 0;
-        if (g_gpu.nvmlLib || g_gpu.nvapiLib) linux_backend_shutdown(&g_gpu);
+    if (!daemon_initialize_gpu_runtimes()) {
+        daemon_shutdown_gpu_runtimes();
         return 1;
+    }
+
+    for (unsigned int i = 0; i < g_gpuRuntimeCount; ++i) {
+        LinuxGpuRuntimeScope selected(&g_gpuRuntimes[i]);
+        if (!pl_thread_start(&g_runtime->fanThread, multi_gpu_fan_thread, g_runtime)) {
+            dlog("daemon: cannot start GPU fan worker; refusing partial service\n");
+            g_running = 0;
+            daemon_shutdown_gpu_runtimes();
+            return 1;
+        }
+        g_runtime->fanThreadStarted = true;
     }
 
     DaemonListener listener = {};
     if (!daemon_open_listener(&listener)) {
         g_running = 0;
-        wake_fan_runtime();
-        pl_thread_join(fanThread);
-        if (g_gpu.nvmlLib || g_gpu.nvapiLib) linux_backend_shutdown(&g_gpu);
+        daemon_shutdown_gpu_runtimes();
         return 1;
     }
 
@@ -782,15 +691,13 @@ int linux_daemon_run(const char* configPath) {
     g_running = 0;
     // Only an orderly exit reaches this line, which is exactly what makes it
     // evidence that the starts leading here were not a crash loop.
-    if (exitStatus == 0) clear_auto_restore_attempts_on_clean_stop();
-    wake_fan_runtime();
-    pl_thread_join(fanThread);
-    daemon_release_fan_to_driver();
+    daemon_shutdown_gpu_runtimes(exitStatus == 0);
     daemon_close_listener(&listener);
     close_daemon_shutdown_pipe();
-    if (g_gpu.nvmlLib || g_gpu.nvapiLib) linux_backend_shutdown(&g_gpu);
     dlog("daemon: exiting with status %d\n", exitStatus);
     return exitStatus;
 }
 
 #include "linux_service_install.cpp"
+
+#endif // GC_DAEMON_RUNTIME_FIXTURE

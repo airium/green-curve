@@ -33,11 +33,9 @@ static inline const GpuAdapterInfo* linux_tui_authoritative_gpu(
 
 // Whether the TUI may write while it shows `shown` (the GPU its live state,
 // draft and mutation authority belong to, and the target every write sends).
-// A selection that names a GPU (`--gpu`, a resolved config.ini record, the
-// selector) allows a write only while exactly that GPU is shown.  Until the
-// switch to it has been answered -- an explicit `--gpu` at start, a switch the
-// daemon refuses because the shown GPU holds active settings, or one that
-// failed as busy -- the shown GPU is another one, and a write would reach it.
+// A selection allows a write only while exactly that GPU is shown. Until its
+// targeted read succeeds, an unavailable or busy target leaves another GPU's
+// frame visible; a write must not reach that previous frame's target.
 enum LinuxTuiShownGpuWrite {
     LINUX_TUI_SHOWN_GPU_WRITE_ALLOWED = 0,
     LINUX_TUI_SHOWN_GPU_WRITE_UNRESOLVED,  // config.ini's GPU did not resolve
@@ -60,10 +58,6 @@ static inline LinuxTuiShownGpuWrite linux_tui_shown_gpu_write(
 // transition into it:
 //   NONE      no selection, or the selected GPU is shown;
 //   SWITCH    switch to it with one targeted refresh;
-//   HELD      the daemon keeps the shown GPU while it holds active settings
-//             and refuses to select another
-//             (linux_gpu_switch_preserves_active_intent); the way out is to
-//             select the shown GPU and Reset it (linux_tui_selector_origin);
 //   DEFERRED  a staged draft belongs to the shown GPU, and switching would
 //             detach it -- the selector refuses the same switch;
 //   REFUSED   the daemon answered the last switch with a refusal, and
@@ -77,7 +71,6 @@ static inline LinuxTuiShownGpuWrite linux_tui_shown_gpu_write(
 enum LinuxTuiGpuAdoption {
     LINUX_TUI_GPU_ADOPTION_NONE = 0,
     LINUX_TUI_GPU_ADOPTION_SWITCH,
-    LINUX_TUI_GPU_ADOPTION_HELD,
     LINUX_TUI_GPU_ADOPTION_DEFERRED,
     LINUX_TUI_GPU_ADOPTION_REFUSED,
     LINUX_TUI_GPU_ADOPTION_BLOCKED,
@@ -85,14 +78,13 @@ enum LinuxTuiGpuAdoption {
 
 static inline LinuxTuiGpuAdoption linux_tui_gpu_adoption(
     const LinuxConfiguredGpu* gpu, const GpuAdapterInfo* shown,
-    bool daemonHoldsActiveSettings, bool draftDirty, bool switchRefused) {
+    bool draftDirty, bool switchRefused) {
     switch (linux_tui_shown_gpu_write(gpu, shown)) {
     case LINUX_TUI_SHOWN_GPU_WRITE_ALLOWED: return LINUX_TUI_GPU_ADOPTION_NONE;
     case LINUX_TUI_SHOWN_GPU_WRITE_UNRESOLVED:
         return LINUX_TUI_GPU_ADOPTION_BLOCKED;
     case LINUX_TUI_SHOWN_GPU_WRITE_NOT_SHOWN: break;
     }
-    if (daemonHoldsActiveSettings) return LINUX_TUI_GPU_ADOPTION_HELD;
     if (draftDirty) return LINUX_TUI_GPU_ADOPTION_DEFERRED;
     if (switchRefused) return LINUX_TUI_GPU_ADOPTION_REFUSED;
     return LINUX_TUI_GPU_ADOPTION_SWITCH;
@@ -103,7 +95,6 @@ static inline const char* linux_tui_gpu_adoption_name(
     switch (adoption) {
     case LINUX_TUI_GPU_ADOPTION_NONE: return "none";
     case LINUX_TUI_GPU_ADOPTION_SWITCH: return "switch";
-    case LINUX_TUI_GPU_ADOPTION_HELD: return "held";
     case LINUX_TUI_GPU_ADOPTION_DEFERRED: return "deferred";
     case LINUX_TUI_GPU_ADOPTION_REFUSED: return "refused";
     case LINUX_TUI_GPU_ADOPTION_BLOCKED: return "blocked";
@@ -156,12 +147,9 @@ static inline bool linux_tui_switch_refusal_matches(
 
 // The adapter the GPU selector steps from: the selected GPU when it names a
 // listed adapter, otherwise the daemon's own selection (left in `*index`).
-// Stepping from the daemon's selection made the shown GPU unreachable
-// whenever another GPU was selected: while the daemon holds the shown GPU for
-// its active settings it refuses every other choice, so the user could
-// neither write to it (not selected) nor select it (one step from it is
-// always another GPU), and its Reset -- the daemon's own condition for the
-// switch -- could not be sent from the TUI at all.
+// Stepping from the configured choice keeps forward/reverse cycling usable
+// when an intermediate target is unavailable and the last shown card stays
+// unchanged. Each card's active intent remains in its own daemon runtime.
 static inline bool linux_tui_selector_origin(
     const LinuxConfiguredGpu* gpu, const GpuAdapterInfo* adapters,
     unsigned int count, unsigned int* index) {

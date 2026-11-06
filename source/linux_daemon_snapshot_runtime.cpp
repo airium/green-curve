@@ -251,7 +251,6 @@ static void populate_snapshot(ServiceSnapshot* s, ControlState* control) {
 #include "linux_daemon_identity.cpp"
 #include "linux_fan_runtime.h"
 
-static bool g_backendReadInitAttempted = false;
 
 // A one-shot read may safely retry backend discovery without selecting write
 // authority. An automatic tick gets one attempt; an explicit user refresh asks
@@ -267,7 +266,9 @@ static bool daemon_retry_backend_for_read(bool explicitRefresh) {
     // Discovery runs inside this read's deadline, like a targeted GPU switch.
     // The timing makes a slow driver start visible against that budget.
     const unsigned long long initStartMs = monotonic_ms();
-    const bool initOk = linux_backend_init(&replacement, nullptr, err, sizeof(err));
+    const bool initOk = linux_backend_init(&replacement,
+        g_runtime->binding.valid ? &g_runtime->binding : nullptr,
+        err, sizeof(err), GPU_LOCATION_ROLE_REQUIRED, &g_runtime->bindingUuid);
     const unsigned long long initMs = monotonic_ms() - initStartMs;
     if (initMs > GC_DAEMON_STATE_REFRESH_BUDGET_MS)
         dlog("daemon backend retry: discovery took %llu ms, over the %u ms state"
@@ -292,6 +293,8 @@ static bool daemon_retry_backend_for_read(bool explicitRefresh) {
          explicitRefresh ? 1 : 0, initMs);
     // The worker performs any deferred fan handback outside this read request.
     wake_fan_runtime();
+    if (g_runtime == &g_discoveryRuntime)
+        daemon_discover_gpu_runtimes(false);
     return true;
 }
 
@@ -309,8 +312,7 @@ static bool select_request_gpu(const ServiceRequest* req, char* err, size_t errS
     }
     // A request built from a config.ini written before a PCI bus renumbering
     // names the right GPU at its old location. Compare live adapters, not the
-    // stale location, or the active GPU looks like "another GPU" and the
-    // request is refused with advice to reset it.
+    // stale location, before checking this runtime's immutable ownership.
     GpuAdapterInfo requested = req->targetGpu;
     bool moved = false;
     int live = linux_resolve_stored_gpu_target(&req->targetGpu,
@@ -339,15 +341,21 @@ static bool select_request_gpu(const ServiceRequest* req, char* err, size_t errS
             req->targetGpu.pciDomain, req->targetGpu.pciBus,
             req->targetGpu.pciDevice, req->targetGpu.pciFunction);
         gc_snprintf(err, errSize,
-            "GPU %s has active Green Curve settings; Reset it before selecting %s",
+            "GPU runtime owns active settings for %s, not %s; refresh the selection or restart the service",
             activeBdf, requestedBdf);
         dlog("daemon state: rejected GPU switch active=%s requested=%s; "
-             "single active-intent ownership preserved\n",
+             "per-GPU active-intent ownership preserved\n",
              activeBdf, requestedBdf);
         return false;
     }
     GpuAdapterInfo previous = g_gpu.selectedGpu;
-    if (!linux_backend_select_target(&g_gpu, &requested, err, errSize)) return false;
+    if (g_runtime->binding.valid &&
+        !linux_gpu_identity_matches(&g_runtime->binding, &requested)) {
+        gc_strlcpy(err, errSize, "request does not belong to this GPU runtime");
+        return false;
+    }
+    if (!linux_backend_select_target(&g_gpu, &requested, err, errSize,
+            GPU_LOCATION_ROLE_REQUIRED, &g_runtime->bindingUuid)) return false;
     if (!g_gpuReady) {
         // This read-only request brought the backend up. Deferred fan recovery
         // runs in the fan worker, outside the state-read deadline.

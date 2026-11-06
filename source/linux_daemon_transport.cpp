@@ -2,6 +2,24 @@
 // SPDX-License-Identifier: MIT
 // Included by linux_daemon.cpp; do not compile separately.
 
+// Startup-policy routing belongs to the client process, not a shared daemon
+// selection that another user could replace between two requests.
+#include "linux_gpu_profile_scope.h"
+
+static GpuAdapterInfo g_daemonClientTarget = {};
+static gc_u64 g_daemonClientInstance = 0, g_daemonClientGpuGeneration = 0;
+void linux_daemon_set_client_target(const GpuAdapterInfo* target,
+    const ServiceStateEnvelope* envelope) {
+    const gc_u64 instance = envelope ? envelope->serviceInstanceId : 0;
+    const gc_u64 generation = envelope ? envelope->gpuGeneration : 0;
+    if (instance != g_daemonClientInstance || generation != g_daemonClientGpuGeneration)
+        linux_gpu_profile_scope_select(nullptr);
+    g_daemonClientInstance = instance;
+    g_daemonClientGpuGeneration = generation;
+    g_daemonClientTarget = target ? *target : GpuAdapterInfo{};
+    linux_gpu_profile_scope_select(target);
+}
+
 // Header-first, deadline-bounded Unix-socket transport.  Keeping the fixed
 // eight-byte magic/version prefix independently readable lets a newly upgraded
 // client diagnose an older, shorter daemon response without first waiting for
@@ -644,6 +662,7 @@ bool linux_daemon_get_startup_policy(ServiceResponse* response,
     req.magic = SERVICE_PROTOCOL_MAGIC;
     req.version = SERVICE_PROTOCOL_VERSION;
     req.command = SERVICE_CMD_GET_STARTUP_POLICY;
+    req.targetGpu = g_daemonClientTarget;
     req.callerPid = (gc_u32)getpid();
     if (!linux_daemon_send(&req, &resp, err, errSize)) return false;
     if (response) *response = resp;
@@ -662,8 +681,9 @@ bool linux_daemon_set_startup_policy(unsigned int mode, int profileSlot,
     req.command = SERVICE_CMD_SET_STARTUP_POLICY;
     req.callerPid = (gc_u32)getpid();
     req.startupMode = (gc_u32)mode;
-    // Slot, GPU and settings ride along only for PROFILE; the validator on both
-    // ends rejects a policy that still carries irrelevant stale settings.
+    req.targetGpu = target ? *target : g_daemonClientTarget;
+    // The GPU routes every mode to its independent runtime. Only PROFILE
+    // carries a slot, profile name and settings.
     if (mode == SERVICE_STARTUP_POLICY_PROFILE) {
         req.profileSlot = (gc_u32)profileSlot;
         if (profileName)
@@ -688,11 +708,11 @@ bool linux_daemon_refresh_startup_profile(int profileSlot,
     req.magic = SERVICE_PROTOCOL_MAGIC;
     req.version = SERVICE_PROTOCOL_VERSION;
     req.command = SERVICE_CMD_REFRESH_STARTUP_PROFILE;
+    req.targetGpu = g_daemonClientTarget;
     req.callerPid = (gc_u32)getpid();
     req.profileSlot = (gc_u32)profileSlot;
-    // No targetGpu and no startupMode by contract: the binding and the mode are
-    // the daemon's, and the validator on both ends rejects a refresh that tries
-    // to carry either.
+    // The target selects a runtime; its stored GPU binding and mode are
+    // unchanged by this content-only refresh.
     if (desired) req.desired = *desired;
     char err[256] = {};
     bool ok = linux_daemon_send(&req, &resp, err, sizeof(err));

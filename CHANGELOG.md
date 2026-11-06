@@ -34,6 +34,7 @@ Dialog messages can be copied to the clipboard, and typing into active curve loc
 ### New
 
 - **Dialog text copying:** pressing Ctrl+C on any confirmation, warning, or error dialog copies the complete message box contents to the clipboard.
+- **Linux multi-GPU control:** keep independent curves, power limits, fans, profiles, and startup policies active on multiple cards through one daemon.
 
 ### Fixed
 
@@ -43,6 +44,10 @@ Dialog messages can be copied to the clipboard, and typing into active curve loc
 ### Compatibility notes
 
 Existing configuration and profiles remain compatible.
+
+Linux clients and the daemon must be upgraded together. Existing singleton
+settings migrate to their verified physical GPU; unscoped user profiles remain
+available as templates, and explicit configuration files keep shared profiles.
 
 ### Downloads and verification
 

@@ -776,21 +776,26 @@ def check_all(ctx, require_text, forbid_text, require_order_in_operation):
         "service_lifecycle_attempt_logon();",
         "no automatic write is layered over a crashed instance's owned state")
     linux_daemon_cpp = _p(ctx, "linux_daemon.cpp")
+    linux_boot_h = _p(ctx, "linux_multi_gpu_boot.h")
     require_order_in_operation(
-        linux_daemon_cpp, "int linux_daemon_run(const char* configPath)",
+        linux_boot_h, "static void daemon_load_gpu_at_boot()",
         "daemon_fan_ownership_handback_at_start();",
         "load_startup_policy_at_boot();",
-        "the Linux fan handback runs before any startup write")
+        "each GPU fan handback runs before its startup write")
     require_order_in_operation(
-        linux_daemon_cpp, "int linux_daemon_run(const char* configPath)",
+        linux_boot_h, "static void daemon_load_gpu_at_boot()",
         "load_auto_restore_guard_at_boot();",
         "daemon_fan_ownership_handback_at_start();",
-        "the guard is loaded before a handback give-up latches it")
+        "each GPU guard is loaded before a handback give-up latches it")
     require_order_in_operation(
         linux_daemon_cpp, "int linux_daemon_run(const char* configPath)",
-        "daemon_fan_ownership_handback_at_start();",
-        "pl_thread_start(&fanThread, fan_reassert_thread",
-        "the Linux fan handback runs before the fan worker exists")
+        "daemon_initialize_gpu_runtimes()",
+        "pl_thread_start(&g_runtime->fanThread, multi_gpu_fan_thread",
+        "all startup handbacks finish before boot fan workers exist")
+    require_order_in_operation(
+        _p(ctx, "linux_multi_gpu_registry.h"), "static bool daemon_initialize_gpu_runtimes()",
+        "daemon_migrate_single_gpu_records()", "daemon_load_gpu_at_boot()",
+        "legacy guards reach their physical owners before any startup write")
     require_text(linux_daemon_cpp,
                  "!daemon_fan_ownership_ensure_before_write(&committedDesired,",
                  "an explicit Linux apply records fan ownership before writing")
@@ -808,7 +813,7 @@ def check_all(ctx, require_text, forbid_text, require_order_in_operation):
         "the Linux handback records itself in flight before writing (loop guard)")
     require_order_in_operation(
         _p(ctx, "linux_fan_ownership.h"),
-        "static void daemon_fan_ownership_handback_at_start()",
+        "static void daemon_fan_ownership_handback_at_start(",
         "g_fanOwnershipHandbackDeferred = true;",
         "daemon_fan_ownership_run_handback(marker);",
         "startup defers or runs the counted handback, never an uncounted write")

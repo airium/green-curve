@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 aufkrawall
 // SPDX-License-Identifier: MIT
 
+#include "linux_gpu_profile_scope.h"
+
 #include "linux_port_internal.h"
 #include "linux_gpu.h"
 #include "linux_daemon.h"
@@ -481,6 +483,8 @@ static int linux_main_impl(int argc, char** argv) {
     linux_configured_gpu_load(configPath,
         opts.hasGpuTarget ? &opts.gpuTarget : nullptr, &gpuSelection);
     GpuAdapterInfo& gpuTarget = gpuSelection.target;
+    linux_gpu_profile_scope_enable(!opts.hasConfigPath);
+    linux_daemon_set_client_target(gpuTarget.valid ? &gpuTarget : nullptr);
 
     if (opts.clkDomainDump)
         return linux_backend_clk_domain_dump(gpuTarget.valid ? &gpuTarget : nullptr, stdout);

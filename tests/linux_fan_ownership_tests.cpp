@@ -17,6 +17,9 @@
 #define linux_backend_set_curve_fan_percent fixture_fan_percent
 namespace linux_fan_ownership_fixture {
 static LinuxGpuState g_gpu;
+static bool g_fanOwnershipMarkerCommitted, g_fanOwnershipHandbackPending;
+static bool g_fanOwnershipHandbackDeferred;
+static LinuxFanOwnershipMarker g_fanOwnershipRecord;
 static bool g_gpuReady, g_stateUncertain, removed, storeFails, autoFails, lockedOut;
 static int writtenAdapter, stores, writes, autoWrites, emergencyPercent;
 static LinuxFanOwnershipMarker saved;

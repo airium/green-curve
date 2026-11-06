@@ -5,6 +5,19 @@ Newest-first rolling memory. Archive older entries to `archive-YYYY-Www.md` when
 This log is PUBLIC (tracked since 2026-10-22): every entry follows the same
 rules as the topic pages (`secret-leak-prevention.md`, "Public wiki safety").
 
+## 2026-11-06: Independent Linux GPU runtime contexts
+
+- One daemon routes requests into immutable per-card contexts, with separate
+  intent, journals, restore policy, generations and fan workers. Client GPU
+  switching no longer requires resetting the previous card.
+- Singleton records move only to their verified owner, retaining automatic
+  restore guards. Ownerless same-boot fan ownership requires a reboot rather
+  than guessing from a partial inventory. Per-GPU user banks preserve shared
+  templates; the TUI no longer blocks switching because another card is tuned.
+- Production request-handler, real profile-filesystem and backend-lifetime
+  fixtures cover independent ownership without GPU writes. See
+  [runtime invariants and limits](../linux-multi-gpu.md).
+
 ## 2026-11-06: Balanced NVML initialization lifetimes
 
 - Backend teardown releases a library initialization only after its own init

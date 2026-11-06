@@ -130,8 +130,8 @@ static inline const char* service_request_reject_reason(
         // A boot-apply policy is configuration, not a mutation: it carries no
         // operation id and no live-state preconditions, because it is allowed
         // while the GPU is degraded or not yet selected. PROFILE must name a
-        // real slot and an exact GPU; the other modes must carry neither, so a
-        // stale target cannot ride along on a "none" request.
+        // real slot and an exact GPU. On Linux, the other modes may carry a
+        // target to select one independent GPU policy, but never a slot.
         if (r->operationId || r->flags || r->resetOcBeforeApply ||
             r->applyOrigin || r->profileSource || anyPrecondition)
             return "startup policy carries mutation fields";
@@ -140,17 +140,24 @@ static inline const char* service_request_reject_reason(
                 return "startup profile policy without a real slot";
             if (!r->targetGpu.valid)
                 return "startup profile policy without an exact target GPU";
-        } else if (r->profileSlot || r->targetGpu.valid) {
+        } else if (r->profileSlot
+#ifdef _WIN32
+                   || r->targetGpu.valid
+#endif
+        ) {
             return "non-profile startup policy carries a slot or GPU";
         }
     } else if (r->command == SERVICE_CMD_REFRESH_STARTUP_PROFILE) {
         // Content-only update of an already-bound policy. It must name the slot
-        // it claims to refresh and must carry NO GPU and NO startup mode: the
-        // binding and the mode belong to the stored record, and accepting them
-        // here would turn a refresh into a re-bind.
+        // it claims to refresh and NO startup mode: the stored binding and
+        // mode cannot change. A Linux target only routes the existing policy
+        // to its GPU runtime; it cannot re-bind that policy.
         if (r->operationId || r->flags || r->resetOcBeforeApply ||
             r->applyOrigin || r->profileSource || r->startupMode ||
-            r->targetGpu.valid || anyPrecondition)
+#ifdef _WIN32
+            r->targetGpu.valid ||
+#endif
+            anyPrecondition)
             return "startup profile refresh would re-bind the policy";
         if (!r->profileSlot || r->profileSlot > (gc_u32)CONFIG_NUM_SLOTS)
             return "startup profile refresh without a real slot";

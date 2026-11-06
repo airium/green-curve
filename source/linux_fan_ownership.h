@@ -18,11 +18,7 @@
 #ifndef GREEN_CURVE_LINUX_FAN_OWNERSHIP_H
 #define GREEN_CURVE_LINUX_FAN_OWNERSHIP_H
 
-static bool g_fanOwnershipMarkerCommitted = false;
-static bool g_fanOwnershipHandbackPending = false;
 // Startup found inherited ownership but no usable backend.
-static bool g_fanOwnershipHandbackDeferred = false;
-static LinuxFanOwnershipMarker g_fanOwnershipRecord = {};
 
 // Loaded ownership has the same authority as a new marker. Resolve its full
 // binding so a moved card can be recovered without accepting a replacement.
@@ -55,8 +51,8 @@ static bool daemon_fan_ownership_allows_selected_write(char* err, size_t errSize
         // marker is per boot, so a restart of the machine releases it.
         gc_strlcpy(err, errSize, recordedAbsent
             ? "the GPU whose fan Green Curve controlled is not present; reconnect it "
-              "and Reset it, or restart the computer, before writing another GPU"
-            : "recover the previous GPU's fan ownership with Reset before writing another GPU");
+              "and Reset it, or restart the computer, before writing this GPU"
+            : "recover this GPU's fan ownership with Reset before writing it");
         dlog("daemon fan ownership: write refused; outstanding target %s "
              "(recorded=%d selected=%u adapters=%u explicitReset=%d)\n",
              recordedAbsent ? "is not present"
@@ -207,7 +203,7 @@ static void daemon_fan_ownership_run_handback(LinuxFanOwnershipMarker marker);
 
 // Once per start, before the startup policy runs and before the fan worker
 // exists, so nothing races it.
-static void daemon_fan_ownership_handback_at_start() {
+static void daemon_fan_ownership_handback_at_start(bool deferHardware = false) {
     LinuxFanOwnershipMarker marker = {};
     char err[256] = {};
     int loaded = linux_fan_ownership_marker_load(GC_DAEMON_FAN_MARKER_FILE,
@@ -250,7 +246,7 @@ static void daemon_fan_ownership_handback_at_start() {
             "every allowed fan handback attempt died");
         return;
     }
-    if (!g_gpuReady) {
+    if (!g_gpuReady || deferHardware) {
         // Nothing can be written now. Retried when the backend becomes usable
         // in this process, otherwise at the next start in this boot.
         g_fanOwnershipHandbackDeferred = true;

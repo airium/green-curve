@@ -127,11 +127,15 @@ def finish_environment_blocked():
 
 LINUX_FIXTURES = (
     ("linux_transport_regression", "socket transport"),
+    ("linux_multi_gpu_regression", "multi-GPU daemon contexts"),
+    ("linux_gpu_profile_scope_regression", "per-GPU profile banks"),
     ("linux_crash_report_regression", "crash report"),
     ("linux_gpu_selection_store_regression", "GPU selection store"),
 )
 LINUX_FIXTURE_EXTRA_SOURCES = {
     "linux_transport_regression": ("fan_curve.cpp", "config_text_utils.cpp"),
+    "linux_multi_gpu_regression": ("fan_curve.cpp", "config_text_utils.cpp", "vf_backends.cpp"),
+    "linux_gpu_profile_scope_regression": ("linux_port.cpp", "linux_port_profiles.cpp", "fan_curve.cpp", "config_text_utils.cpp"),
     "linux_crash_report_regression": (),
     # The [gpu] record I/O, the INI reader/writer it uses, and the shared
     # text/fan-curve helpers gpu_core.h's IPC validators reach.

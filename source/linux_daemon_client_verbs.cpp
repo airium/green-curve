@@ -123,13 +123,18 @@ bool linux_daemon_get_state_ex(const GpuAdapterInfo* target,
     req.flags = service_request_flags_for_command(
         req.command, forceBackendRetry);
     req.callerPid = (gc_u32)getpid();
-    if (target) req.targetGpu = *target;
+    if (target) {
+        req.targetGpu = *target;
+    }
     LinuxDaemonSendOutcome outcome = {};
     bool ok = linux_daemon_send_deadline(
         &req, &resp, linux_daemon_command_response_timeout_ms(req.command),
         &outcome, err, errSize);
     if (outcomeOut) *outcomeOut = outcome;
     if (!ok) return false;
+    const auto* authoritative = daemon_response_selected_gpu(&resp);
+    if (authoritative && (!target || linux_gpu_identity_matches(target, authoritative)))
+        linux_daemon_set_client_target(authoritative, &resp.state);
     if (response) *response = resp;
     return true;
 }

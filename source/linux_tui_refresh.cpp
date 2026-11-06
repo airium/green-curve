@@ -14,7 +14,7 @@ static bool tui_refresh_from_daemon(TuiState* state, bool userRequested,
 static LinuxTuiGpuAdoption tui_gpu_adoption_step(const TuiState* state) {
     const LinuxConfiguredGpu* gpu = &state->configuredGpu;
     return linux_tui_gpu_adoption(gpu, tui_shown_gpu(state),
-        state->service.state.activeDesiredValid != 0, state->dirty,
+        state->dirty,
         linux_tui_switch_refusal_matches(&state->switchRefusal, &gpu->target,
                                          &state->service));
 }
@@ -90,7 +90,7 @@ static void tui_bring_up_daemon_backend(TuiState* state, bool userRequested) {
 // chosen with `--gpu`, is then switched to with one targeted refresh after
 // every answered refresh until it is the GPU shown: the TUI writes to the GPU
 // it shows, so until then every write is blocked (linux_tui_shown_gpu_write).
-// linux_tui_gpu_adoption() says when not to switch (held, deferred, refused,
+// linux_tui_gpu_adoption() says when not to switch (deferred, refused,
 // unresolved); each of those states says why once, on the transition.
 // Runs only at the end of an untargeted refresh, so the switch below does not
 // recurse and the selector's own choice is not undone within its refresh.
@@ -134,16 +134,10 @@ static void tui_adopt_configured_gpu(TuiState* state, bool userRequested) {
                  "Writes blocked: %s; click the GPU name to select one, or "
                  "save one with --gpu", linux_configured_gpu_problem(gpu->status));
         break;
-    case LINUX_TUI_GPU_ADOPTION_HELD:
-        snprintf(state->status, sizeof(state->status),
-                 "Writes blocked: GPU %s has active settings, so the daemon "
-                 "keeps it instead of the selected GPU %s; select %s with the "
-                 "GPU name and Reset it to switch", shown, selected, shown);
-        break;
     case LINUX_TUI_GPU_ADOPTION_DEFERRED:
         snprintf(state->status, sizeof(state->status),
                  "Writes blocked: this window shows GPU %s, not the selected "
-                 "GPU %s; reset or save staged changes to switch to it",
+                 "GPU %s; save staged changes before switching to it",
                  shown, selected);
         break;
     case LINUX_TUI_GPU_ADOPTION_REFUSED:
@@ -191,16 +185,13 @@ bool tui_configured_gpu_allows_write(TuiState* state, const char* action) {
     return false;
 }
 
-// The GPU selector (a click on the GPU name).  It steps from the selected GPU,
-// not the shown one (linux_tui_selector_origin), so a GPU the daemon keeps for
-// its active settings can itself be selected -- and Reset -- while another one
-// is selected.  An explicit choice replaces config.ini's GPU for this session
-// and lifts its write block once the daemon shows it; `--gpu` persists one.
+// The selector steps from the configured choice, not the last shown GPU, so
+// cycling can pass an unavailable target. Other GPUs keep their active intent.
 bool tui_select_gpu_step(TuiState* state, int delta) {
     if (!state) return false;
     if (state->dirty) {
         snprintf(state->status, sizeof(state->status),
-                 "Reset or save staged changes before switching GPUs");
+                 "Save staged changes before switching GPUs");
         return false;
     }
     const unsigned int count = state->service.snapshot.adapterCount;
@@ -227,7 +218,7 @@ bool tui_select_gpu_step(TuiState* state, int delta) {
         return false;
     }
     const GpuAdapterInfo chosen = state->service.snapshot.adapters[next];
-    // The choice advances even when the daemon must keep showing another GPU.
+    // The choice advances even when the requested target is unavailable.
     // The shown-GPU write gate remains responsible for mutation authority.
     state->configuredGpu.target = chosen;
     state->configuredGpu.status = LINUX_CONFIGURED_GPU_EXPLICIT;

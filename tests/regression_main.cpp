@@ -4429,7 +4429,7 @@ static int run_all_tests(int argc, char** argv) {
     // Protocol-v13 request validation, mutation preconditions, and field layout.
     {
         if (SERVICE_PROTOCOL_MAGIC != 0x47535643u) return 80;
-        if (SERVICE_PROTOCOL_VERSION != 29) return 81;
+        if (SERVICE_PROTOCOL_VERSION != 30) return 81;
         // These are release gates, not incidental layout observations. A field
         // addition that changes a fixed-size IPC structure must bump the wire
         // version; otherwise mixed old/new peers pass the header handshake and
@@ -13758,7 +13758,11 @@ static int run_all_tests_final() {
         ServiceRequest strayTarget = request;
         strayTarget.startupMode = SERVICE_STARTUP_POLICY_NONE;
         strayTarget.profileSlot = 0;
+#ifdef _WIN32
         if (validate_service_request_for_ipc(&strayTarget)) return 1853;
+#else
+        if (!validate_service_request_for_ipc(&strayTarget)) return 1853;
+#endif
         ServiceRequest cleanNone = request;
         cleanNone.startupMode = SERVICE_STARTUP_POLICY_NONE;
         cleanNone.profileSlot = 0;
@@ -13956,7 +13960,11 @@ static int run_all_tests_final() {
         if (validate_service_request_for_ipc(&refreshBadSlot)) return 2000;
         ServiceRequest refreshWithGpu = refresh;
         refreshWithGpu.targetGpu = boundGpu;
+#ifdef _WIN32
         if (validate_service_request_for_ipc(&refreshWithGpu)) return 2001;
+#else
+        if (!validate_service_request_for_ipc(&refreshWithGpu)) return 2001;
+#endif
         ServiceRequest refreshWithMode = refresh;
         refreshWithMode.startupMode = SERVICE_STARTUP_POLICY_PROFILE;
         if (validate_service_request_for_ipc(&refreshWithMode)) return 2002;

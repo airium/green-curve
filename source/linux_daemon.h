@@ -99,6 +99,10 @@ bool linux_daemon_resolve_write_target(const GpuAdapterInfo* preferred,
                                        GpuAdapterInfo* out,
                                        char* err, size_t errSize);
 
+// Select the per-process routing target for startup-policy requests.
+void linux_daemon_set_client_target(const GpuAdapterInfo* target,
+    const ServiceStateEnvelope* envelope = nullptr);
+
 // Startup-apply policy: what the daemon writes to the GPU when it starts.
 // The set path snapshots the resolved settings because the daemon runs with
 // ProtectHome=yes and cannot read the caller's config.ini itself.

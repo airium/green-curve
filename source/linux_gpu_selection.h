@@ -90,10 +90,9 @@ static inline bool linux_gpu_same_pci_nonconflicting(
     return linux_gpu_identity_matches(known, candidate);
 }
 
-// The Linux daemon currently owns one selected backend and one active intent.
-// Switching that backend while an intent belongs to another GPU would make the
-// fan worker and state envelope apply/attribute the old intent to the new GPU.
-// Until per-GPU runtime ownership exists, selection therefore fails closed.
+// One backend/runtime owns one physical GPU and one active intent. Selection
+// may choose another runtime, but it must never repurpose an active backend:
+// the fan worker and state envelope would then name the wrong physical card.
 static inline bool linux_gpu_switch_preserves_active_intent(
     bool hasActiveDesired, const GpuAdapterInfo* activeTarget,
     const GpuAdapterInfo* requestedTarget) {

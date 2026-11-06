@@ -199,6 +199,31 @@ The TUI supports full keyboard navigation and mouse interactions (clicks and scr
 - `Ctrl+Page Up` / `Ctrl+Page Down` switches tabs.
 - `Home` / `End` jumps through the VF curve.
 
+### Multiple GPUs on Linux
+
+One daemon manages all detected GPUs independently. Select a card with
+`--gpu DDDD:BB:DD.F`, or click the GPU selector in the TUI. Switching cards
+does not reset the previous card: each keeps its own curve, power/fan settings,
+startup policy, operation history, and automatic-restore guard. Unsaved TUI
+changes must still be saved or discarded before switching.
+
+The normal user profile bank is separate for each physical GPU (UUID when
+available, otherwise PCI address). Existing unscoped profiles remain read-only
+templates until that card's bank is saved. An explicit `--config path` keeps
+the previous shared-bank behavior, useful for reusable profiles and offline
+editing. Use `--gpu` with startup-policy commands on a multi-GPU machine.
+
+A legacy fan-ownership record without a GPU identity requires a reboot when
+it belongs to the current boot: the daemon preserves it and refuses to start
+rather than guessing which fan to change. After a verified boot change, only
+that old marker is retired; newer per-GPU records remain untouched.
+
+Only one Green Curve daemon may own the state directory. A physical board that
+moves PCI address during a running session requires a service restart; it is
+never registered a second time. Unavailable cards do not redirect writes to
+another card. GPU curve writes on multi-card hardware still require live
+validation; automated coverage uses fake driver calls.
+
 ### Startup apply behavior
 
 By default, the Linux daemon re-applies the last active settings on startup. You can configure startup behavior via the TUI (**Profiles & Tools** tab) or CLI:

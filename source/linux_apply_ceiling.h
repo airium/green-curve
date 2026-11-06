@@ -80,10 +80,10 @@ static ApplyClockCeilingPlan linux_apply_clock_ceiling_plan(
 // by the witness; the pre-fix witness used the PLAN's `arm` flag as evidence
 // of installation, so a refused clamp still produced a HELD verdict in the
 // journal (audit CT-07).
-static ApplyClockCeilingArmResult g_linuxCeilingArmResult =
+static thread_local ApplyClockCeilingArmResult g_linuxCeilingArmResult =
     APPLY_CEILING_ARM_NOT_NEEDED;
-static bool g_linuxCeilingArmed = false;
-static bool g_linuxCeilingWriteAttempted = false;
+static thread_local bool g_linuxCeilingArmed = false;
+static thread_local bool g_linuxCeilingWriteAttempted = false;
 // The plan AS ARMED, cached for the rest of the transaction.
 //
 // Every later consumer used to recompute it from `g` and `d`.  That is wrong
@@ -92,7 +92,7 @@ static bool g_linuxCeilingWriteAttempted = false;
 // transition that is already half-done, and the witness would print a ceiling
 // value that never existed.  The clamp that is physically installed is a fact,
 // not something to re-derive.
-static ApplyClockCeilingPlan g_linuxCeilingPlan = {};
+static thread_local ApplyClockCeilingPlan g_linuxCeilingPlan = {};
 // Whether the state this transaction is leaving was a HARD pin.
 //
 // CT-07.  Rollback needs this and cannot derive it: a HARD profile's VF tail
@@ -101,8 +101,8 @@ static ApplyClockCeilingPlan g_linuxCeilingPlan = {};
 // one rollback outcome that is worse than doing nothing.  It is a transaction
 // fact recorded at entry, not something the restore can infer from a snapshot
 // full of positive offsets, which an ordinary unpinned overclock also has.
-static bool g_linuxOutgoingHadHardPin = false;
-static unsigned int g_linuxOutgoingCeilingMHz = 0;
+static thread_local bool g_linuxOutgoingHadHardPin = false;
+static thread_local unsigned int g_linuxOutgoingCeilingMHz = 0;
 
 static void linux_apply_ceiling_reset_state() {
     g_linuxCeilingArmResult = APPLY_CEILING_ARM_NOT_NEEDED;

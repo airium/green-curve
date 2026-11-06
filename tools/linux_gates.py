@@ -13,9 +13,16 @@ import shlex
 import subprocess
 import sys
 import arch_recipe_checks
+import build_state
 
 
 def _p(ctx, name):
+    if name == "linux_daemon.cpp":
+        return build_state.concatenated_gate_surface(
+            os.path.join(ctx.SCRIPT_DIR, "build-tmp"), ctx.SOURCE_DIR,
+            "_linux_daemon_policy_surface.cpp",
+            ("linux_daemon.cpp", "linux_multi_gpu_context.h", "linux_multi_gpu_boot.h",
+             "linux_multi_gpu_registry.h", "linux_multi_gpu_runtime.h"))
     return os.path.join(ctx.SOURCE_DIR, name)
 
 
@@ -548,7 +555,7 @@ def check_startup_policy(ctx, require_text, forbid_text):
     daemon_cpp = _p(ctx, "linux_daemon.cpp")
     policy_h = _p(ctx, "linux_startup_policy.h")
     cli_cpp = _p(ctx, "linux_cli_options.cpp")
-    require_text(protocol_h, "SERVICE_PROTOCOL_VERSION = 29",
+    require_text(protocol_h, "SERVICE_PROTOCOL_VERSION = 30",
                  "the startup-policy, readback-validity, outcome-severity and "
                  "update-state/XBAR fields each moved the protocol version with "
                  "them")
@@ -1080,7 +1087,7 @@ def check_auto_restore(ctx, require_text, forbid_text, require_order):
     require_text(serve_h, "watchdogIntervalMs ? (int)watchdogIntervalMs : -1",
                  "without a watchdog the accept loop still waits forever")
     require_text(daemon_cpp,
-                 "if (!pl_thread_start(&fanThread, fan_reassert_thread, nullptr)) {",
+                 "if (!pl_thread_start(&g_runtime->fanThread, multi_gpu_fan_thread, g_runtime)) {",
                  "a daemon that cannot start its fan worker refuses to serve")
     require_text(daemon_cpp, "clear_auto_restore_attempts_on_clean_stop();",
                  "an orderly stop clears the per-boot attempt counter")
@@ -1261,12 +1268,16 @@ def check_gpu_location(ctx, require_text, forbid_text, require_order):
         "daemon_retry_backend_for_read(\n"
         "                    (req->flags & SERVICE_REQUEST_FLAG_INTERACTIVE) != 0);",
         "an untargeted state read initializes or retries backend discovery")
-    # A hold must stay recoverable from the TUI: the selector steps from the
-    # selected GPU, so the GPU the daemon keeps for its active settings can be
-    # selected and Reset.  A switch the daemon answered with a refusal is not
-    # asked again every tick, and a refusal is never reported as "busy".
+    # The selector steps from its configured choice so cycling can pass an
+    # unavailable target. Genuine answered refusals are not retried on every
+    # tick and are never reported as "busy"; active intent alone is no refusal.
     actions_cpp = _p(ctx, "linux_tui_actions.cpp")
     transport_cpp = _p(ctx, "linux_daemon_transport.cpp")
+    authority_h = _p(ctx, "linux_tui_authority.h")
+    forbid_text(authority_h, "LINUX_TUI_GPU_ADOPTION_HELD",
+                "active settings on one runtime never prevent switching to another")
+    require_text(authority_h, "if (draftDirty)", "dirty drafts still defer switching")
+    require_text(authority_h, "if (switchRefused)", "real target refusals remain cached")
     require_text(refresh_cpp, "linux_tui_selector_origin(&state->configuredGpu,",
                  "the TUI GPU selector steps from the selected GPU")
     require_text(actions_cpp, "tui_select_gpu_step(state, action.value);",
@@ -1283,8 +1294,8 @@ def check_gpu_location(ctx, require_text, forbid_text, require_order):
     require_text(transport_cpp, "if (outcome) outcome->answered = true;",
                  "the transport reports a complete answer separately from success")
     # The TUI sends the GPU it shows.  A resolved or explicit selection that
-    # is not shown yet (`--gpu`, a switch refused for active settings or
-    # failed as busy) must not let a write reach the shown GPU.
+    # is not shown yet (`--gpu`, an unavailable target or a busy request)
+    # must not let a write reach the shown GPU.
     require_text(refresh_cpp, "linux_tui_shown_gpu_write(",
                  "TUI writes require the selected GPU to be the one shown")
     forbid_text(refresh_cpp,

@@ -115,6 +115,7 @@ static bool send_simple(unsigned int command, const DesiredSettings* desired,
             query.command = SERVICE_CMD_GET_OPERATION_RESULT;
             query.callerPid = (gc_u32)getpid();
             query.operationId = req.operationId;
+            query.targetGpu = req.targetGpu;
             char queryErr[256] = {};
             LinuxDaemonSendOutcome queryOutcome = {};
             ++attempts;

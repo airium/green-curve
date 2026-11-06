@@ -83,7 +83,8 @@ enum {
     // v29 appends ServiceAutoApplyFailure to ServiceSnapshot (192 bytes): the
     // cause of the automatic write that latched AUTOMATIC_APPLY_FAILED, so the
     // GUI can tell the user instead of leaving a silent lockout.
-    SERVICE_PROTOCOL_VERSION = 29,
+    // v30 routes Linux startup policy and operation queries to independent GPUs.
+    SERVICE_PROTOCOL_VERSION = 30,
 };
 
 // ServiceRequest.flags bits. Bit 0 = interactive apply; on a state read it

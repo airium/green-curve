@@ -198,11 +198,11 @@ same rollback-capable curve phase; durable intent can therefore never forget a
 sparse point while its old offset remains active and untracked.
 On a multi-GPU system the backend may use adapter 0 for read-only telemetry,
 but it does not publish `ADAPTER_IDENTITY` or `READY` until an exact write
-target has been selected. The daemon currently owns one selected backend and
-one active desired intent. A request cannot switch that backend to another GPU
-while intent is active; the user must Reset the owning GPU first. The fan
-worker independently checks that the active-intent identity still matches the
-selected backend before any reassertion write.
+target has been selected. Each exact target now owns an independent runtime:
+backend, active intent, journals, startup guard and fan worker. Selecting a
+second card selects its runtime without resetting the first. Each fan worker
+checks its own active-intent identity before every reassertion write. See
+[Linux multi-GPU runtime](linux-multi-gpu.md) for lifecycle and migration rules.
 The installer deliberately creates the group but does **not** add the invoking
 account: an administrator must grant non-root control explicitly with
 `sudo usermod -aG greencurve "$USER"`, then the user must sign out/in (or run
@@ -891,19 +891,14 @@ boot recovery rebind) keep the exact `linux_gpu_identity_matches()`.
   (busy): the TUI showed and wrote the daemon's previous GPU. Clicking the GPU
   name selects one explicitly for the session and lifts the block; the TUI
   selection is not persisted (`--gpu` is).
-- **A hold stays recoverable from the TUI** (2026-10-24). The selector
-  (`tui_select_gpu_step()`) steps from the SELECTED GPU when it names a listed
-  adapter (`linux_tui_selector_origin()`), otherwise from the daemon's
-  selection. Stepping from the daemon's selection made a HELD state a dead
-  end: the daemon refuses every GPU but the one with active settings, that GPU
-  was not selected (so Reset was blocked), and one step from it is always
-  another GPU. The selector now advances its explicit choice before asking
-  the daemon to adopt it, including when an intermediate adapter is refused
-  (2026-10-27). Repeated forward steps can reach the held GPU with three or
-  more adapters; its Reset is allowed once it is selected and shown. The choice
-  also survives busy responses and disconnects. Explicit and automatic switches
-  share answered-refusal tracking, so telemetry does not repeat refused switches
-  to the selection. Diagnostic: `tui: selector choice advanced to adapter=`.
+- **Selection is independent of other cards' active settings** (2026-11-06).
+  The selector (`tui_select_gpu_step()`) steps from the configured choice, so
+  it can pass an unavailable intermediate adapter and return to a shown card.
+  Each selected card exposes its own active intent; no Reset is needed to
+  switch between tuned cards. Dirty drafts still defer switching, and genuine
+  answered refusals remain cached until a relevant change or explicit Refresh.
+  Busy responses and disconnects preserve the choice for retry. Diagnostic:
+  `tui: selector choice advanced to adapter=`.
 - Diagnostics: `linux_format_stored_gpu_detail()` (stored model@BDF, role,
   first four live adapters) in the backend's "stored GPU target ..." line, the
   client's "gpu selection:" lines and the persist line; the daemon logs a moved

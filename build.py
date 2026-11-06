@@ -2117,7 +2117,7 @@ def run_source_regression_checks():
 
     require_text(shared_h, "APP_DEBUG_DEFAULT_ENABLED 1", "debug logging remains default-on")
     require_text(shared_h, "APP_TITLE           APP_NAME \" v\" APP_VERSION", "plain title macro exists")
-    require_text(shared_h, "SERVICE_PROTOCOL_VERSION = 29",
+    require_text(shared_h, "SERVICE_PROTOCOL_VERSION = 30",
                  "service protocol publishes outcome severity, update state, XBAR, the handback lockout and the auto-apply failure")
     require_text(shared_h, "typedef gc_u8 gc_bool8", "IPC bool fields use a fixed-width one-byte type")
     require_text(shared_h, "canonicalize_gc_bool8", "IPC bool fields are canonicalized at trust boundaries")
@@ -3438,7 +3438,10 @@ def run_source_regression_checks():
                 _lf.write(_source.read())
                 _lf.write("\n")
     linux_backend_cpp = _linux_backend_surface
-    linux_daemon_cpp = os.path.join(SOURCE_DIR, "linux_daemon.cpp")
+    linux_daemon_cpp = build_state.concatenated_gate_surface(
+        BUILD_WORK_DIR, SOURCE_DIR, "_linux_daemon_runtime_surface.cpp",
+        ("linux_daemon.cpp", "linux_multi_gpu_context.h", "linux_multi_gpu_boot.h",
+         "linux_multi_gpu_registry.h", "linux_multi_gpu_runtime.h"))
     linux_daemon_lifecycle_h = os.path.join(SOURCE_DIR, "linux_daemon_lifecycle.h")
     linux_daemon_serve_h = os.path.join(SOURCE_DIR, "linux_daemon_serve.h")
     linux_fan_runtime_h = os.path.join(SOURCE_DIR, "linux_fan_runtime.h")
@@ -3618,7 +3621,7 @@ def run_source_regression_checks():
     require_text(linux_daemon_transport_cpp, "response header read", "Linux transport diagnoses header-first response failures")
     require_text(linux_daemon_transport_cpp, "protocol mismatch", "Linux transport diagnoses old daemon protocols before reading their body")
     require_text(linux_systemd_notify_policy_h, "READY=1", "Linux daemon sends systemd readiness only after startup")
-    require_order(linux_daemon_cpp, "startup reapply", "daemon_open_listener(&listener)",
+    require_order(linux_daemon_cpp, "daemon_initialize_gpu_runtimes()", "daemon_open_listener(&listener)",
                   "Linux socket listening follows startup replay")
     require_text(linux_daemon_serve_h, "listen(srv, GC_DAEMON_LISTEN_BACKLOG)",
                  "Linux listener uses the named backlog constant")
