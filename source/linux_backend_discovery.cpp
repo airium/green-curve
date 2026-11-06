@@ -453,6 +453,7 @@ bool linux_backend_init(LinuxGpuState* g, const GpuAdapterInfo* target,
             initStatus, err);
         return false;
     }
+    g->nvmlInitialized = true;
     unsigned int count = 0;
     int countStatus = g->nvml.getCount
         ? g->nvml.getCount(&count) : NVML_ERROR_FUNCTION_NOT_FOUND;
@@ -618,7 +619,7 @@ bool linux_backend_select_target(LinuxGpuState* g,
 
 void linux_backend_shutdown(LinuxGpuState* g) {
     if (!g) return;
-    if (g->nvml.shutdown) g->nvml.shutdown();
+    if (g->nvmlInitialized && g->nvml.shutdown) g->nvml.shutdown();
     if (g->nvmlLib) pl_lib_close(g->nvmlLib);
     if (g->nvapiLib) pl_lib_close(g->nvapiLib);
     memset(g, 0, sizeof(*g));

@@ -5,6 +5,14 @@ Newest-first rolling memory. Archive older entries to `archive-YYYY-Www.md` when
 This log is PUBLIC (tracked since 2026-10-22): every entry follows the same
 rules as the topic pages (`secret-leak-prevention.md`, "Public wiki safety").
 
+## 2026-11-06: Balanced NVML initialization lifetimes
+
+- Backend teardown releases a library initialization only after its own init
+  succeeded, including partial enumeration failures. A failed sibling backend
+  cannot consume another GPU context's initialization reference.
+- Production-backend fake-library cases 7880-7890 cover initialization failure,
+  enumeration failure, independent contexts and repeated teardown.
+
 ## 2026-11-05: Themed message box clipboard copy and VF flatten field edit fix
 
 - Themed message boxes (`ui_message_box.cpp`, `message_box_policy.h`) now support

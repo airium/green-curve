@@ -38,6 +38,7 @@ struct LinuxGpuState {
 
     // NVML
     PlLib nvmlLib;
+    bool nvmlInitialized;
     NvmlApi nvml;
     // Optional physical-identity query, resolved once at init: targeted
     // requests re-check the selected GPU's UUID on every call.

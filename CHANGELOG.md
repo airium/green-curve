@@ -37,6 +37,7 @@ Dialog messages can be copied to the clipboard, and typing into active curve loc
 
 ### Fixed
 
+- **Linux driver recovery:** failed backend initialization no longer releases another initialized GPU control session.
 - **VF curve flatten editing:** retyping the target frequency in a ticked flatten point's edit box preserves normal left-to-right typing order without caret resets.
 
 ### Compatibility notes

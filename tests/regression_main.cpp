@@ -1020,6 +1020,7 @@ int run_linux_restore_role_tests();
 int run_vf_point_visibility_tests();
 int run_linux_vf_read_tests();
 int run_linux_vf_write_tests();
+int run_linux_nvml_lifetime_tests();
 int run_linux_read_request_tests();
 // A polled ClkDomains reader logs a repeated refusal once
 // (tests/xbar_read_log_tests.cpp, 7730-7739).
@@ -2667,6 +2668,7 @@ static int run_all_tests(int argc, char** argv) {
     }
     if (int vfFailure = run_linux_vf_read_tests()) return vfFailure;
     if (int vfFailure = run_linux_vf_write_tests()) return vfFailure;
+    if (int lifetimeFailure = run_linux_nvml_lifetime_tests()) return lifetimeFailure;
     if (int readFailure = run_linux_read_request_tests()) return readFailure;
     if (int xbarLogFailure = run_xbar_read_log_tests()) return xbarLogFailure;
     if (int domainDumpFailure = run_clk_domain_dump_tests()) return domainDumpFailure;

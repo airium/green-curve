@@ -38,6 +38,7 @@ REGRESSION_SOURCES = (
     'vf_point_visibility_tests.cpp',
     'linux_vf_read_tests.cpp',
     'linux_vf_write_tests.cpp',
+    'linux_nvml_lifetime_tests.cpp',
     'linux_read_request_tests.cpp',
     'xbar_read_log_tests.cpp',
     'clk_domain_dump_tests.cpp',
